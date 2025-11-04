@@ -3,7 +3,7 @@ set -e
 
 REPO_URL="git@github.com:panjd123/dotfile.git"
 DOTFILES_DIR="$HOME/.dotfile"
-COMMON_FILE="$DOTFILES_DIR/bashrc_common"
+COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
 
 echo "→ 检查 dotfile 仓库..."
 
