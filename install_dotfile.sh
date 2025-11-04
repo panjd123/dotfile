@@ -4,7 +4,6 @@ set -e
 REPO_URL="git@github.com:panjd123/dotfile.git"
 DOTFILES_DIR="$HOME/.dotfile"
 COMMON_FILE="$DOTFILES_DIR/bashrc_common"
-LINK_TARGET="$HOME/.bashrc_common"
 
 echo "→ 检查 dotfile 仓库..."
 
@@ -17,13 +16,10 @@ else
   git -C "$DOTFILES_DIR" pull --quiet
 fi
 
-# 创建软链接
-ln -sf "$COMMON_FILE" "$LINK_TARGET"
-
 # 确保 bashrc 中加载
-if ! grep -q "source ~/.bashrc_common" "$HOME/.bashrc"; then
-  echo "source ~/.bashrc_common" >> "$HOME/.bashrc"
-  echo "→ 已自动将 ~/.bashrc_common 加入 ~/.bashrc"
+if ! grep -q "source $COMMON_FILE" "$HOME/.bashrc"; then
+  echo "source $COMMON_FILE" >> "$HOME/.bashrc"
+  echo "→ 已自动将 $COMMON_FILE 加入 ~/.bashrc"
 fi
 
-echo "✅ 安装完成。重新打开终端或执行 'source ~/.bashrc_common' 生效。"
+echo "✅ 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
