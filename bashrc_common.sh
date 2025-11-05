@@ -18,7 +18,12 @@ update-dotfile() {
       echo "[dotfile] 已重新加载 ✅"
     fi
   else
-    echo "[dotfile] 错误：$DOTFILES_DIR 不是 git 仓库。"
+    echo "[dotfile] 未检测到 git 仓库，使用直接下载方式获取 bashrc_common.sh ..."
+    curl -sSfL https://github.com/panjd123/dotfile/raw/master/bashrc_common.sh -o "$COMMON_FILE"
+    echo "[dotfile] 下载完成 ✅"
+    echo "[dotfile] 重新加载配置..."
+    source "$HOME/.bashrc_common"
+    echo "[dotfile] 已重新加载 ✅"
   fi
 }
 alias update_dotfile='update-dotfile'

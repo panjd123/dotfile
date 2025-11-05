@@ -8,3 +8,7 @@
 git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
 ~/.dotfile/install_dotfile.sh
 ```
+
+```bash
+curl https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/bashrc_common.sh | bash
+```
