@@ -10,5 +10,5 @@ git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
 ```
 
 ```bash
-curl https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/bashrc_common.sh | bash
+https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/install_dotfile.sh | bash
 ```
