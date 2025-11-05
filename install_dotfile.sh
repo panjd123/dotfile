@@ -26,5 +26,4 @@ else
   echo "[dotfile] ~/.bashrc 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
 fi
 
-source "$COMMON_FILE"
-echo "[dotfile] 安装完成，并加载配置 ✅"
+echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
