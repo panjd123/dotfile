@@ -5,6 +5,7 @@
 # ===========================================
 
 DOTFILES_DIR="$HOME/.dotfile"
+COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
 
 # -------- 手动更新命令 --------
 update-dotfile() {
@@ -12,9 +13,9 @@ update-dotfile() {
   if [ -d "$DOTFILES_DIR/.git" ]; then
     git -C "$DOTFILES_DIR" pull --rebase --autostash
     echo "[dotfile] 更新完成 ✅"
-    if [ -f "$HOME/.bashrc_common" ]; then
+    if [ -f "$COMMON_FILE" ]; then
       echo "[dotfile] 重新加载配置..."
-      source "$HOME/.bashrc_common"
+      source "$COMMON_FILE"
       echo "[dotfile] 已重新加载 ✅"
     fi
   else
@@ -22,7 +23,7 @@ update-dotfile() {
     curl -sSfL https://github.com/panjd123/dotfile/raw/master/bashrc_common.sh -o "$COMMON_FILE"
     echo "[dotfile] 下载完成 ✅"
     echo "[dotfile] 重新加载配置..."
-    source "$HOME/.bashrc_common"
+    source "$COMMON_FILE"
     echo "[dotfile] 已重新加载 ✅"
   fi
 }
