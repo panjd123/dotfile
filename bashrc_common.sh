@@ -128,9 +128,24 @@ extract() {
   fi
 }
 
-# python 相关
-alias a='. .venv/bin/activate'
-alias va='. .venv/bin/activate'
+a() {
+    local target=".venv/bin/activate"
+
+    # 如果传入参数，则使用参数路径
+    if [ $# -gt 0 ]; then
+        target="$1/.venv/bin/activate"
+    fi
+
+    # 检查文件是否存在
+    if [ -f "$target" ]; then
+        # 使用 source 或 . 激活虚拟环境
+        source "$target"
+    else
+        echo "❌ 未找到虚拟环境：$target"
+        return 1
+    fi
+}
+alias va=a
 hf_download() {
   HF_ENDPOINT=https://hf-mirror.com python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$1')"
 }
