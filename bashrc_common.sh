@@ -266,8 +266,9 @@ hf_push() {
         return 1
     fi
 
-    # 提取最后一个参数作为 model，其余为 ssh 目标参数
+    # 最后一个参数是模型名
     local model="${@: -1}"
+    # 其余是 SSH 目标和可选参数
     local remote_args=("${@:1:$#-1}")
 
     local local_base="$HOME/.cache/huggingface/hub"
@@ -279,9 +280,16 @@ hf_push() {
     echo "To:   ${remote_args[*]}:$remote_path"
     echo
 
-    rsync -avzP --links -e "ssh ${remote_args[*]}" \
+    # 构建 SSH 命令
+    local ssh_cmd="ssh"
+    if [ ${#remote_args[@]} -gt 1 ]; then
+        ssh_cmd+=" ${remote_args[@]:1}"  # 添加 ssh 额外参数
+    fi
+
+    # 执行 rsync
+    rsync -avzP --links -e "$ssh_cmd" \
         "$local_base/$model_dir/" \
-        "$(echo "${remote_args[0]}" | awk '{print $1}'):$remote_path"
+        "${remote_args[0]}:$remote_path"
 
     if [ $? -eq 0 ]; then
         echo "✅ Sync complete: $model"
@@ -298,7 +306,9 @@ hf_pull() {
         return 1
     fi
 
+    # 最后一个参数是模型名
     local model="${@: -1}"
+    # 前面的参数是目标和 ssh 选项
     local remote_args=("${@:1:$#-1}")
 
     local local_base="$HOME/.cache/huggingface/hub"
@@ -310,8 +320,15 @@ hf_pull() {
     echo "To:   $local_base/$model_dir/"
     echo
 
-    rsync -avzP --links -e "ssh ${remote_args[*]}" \
-        "$(echo "${remote_args[0]}" | awk '{print $1}'):$remote_path" \
+    # 构建 SSH 命令
+    local ssh_cmd="ssh"
+    if [ ${#remote_args[@]} -gt 1 ]; then
+        ssh_cmd+=" ${remote_args[@]:1}"  # 添加 ssh 额外参数
+    fi
+
+    # 执行 rsync
+    rsync -avzP --links -e "$ssh_cmd" \
+        "${remote_args[0]}:$remote_path" \
         "$local_base/$model_dir/"
 
     if [ $? -eq 0 ]; then
