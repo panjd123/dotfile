@@ -146,6 +146,9 @@ a() {
     fi
 }
 alias va=a
+
+alias da=deactivate
+
 hf_download() {
   HF_ENDPOINT=https://hf-mirror.com python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$1')"
 }
@@ -251,3 +254,71 @@ dockerbash() {
     docker exec -it "$container_id" /bin/bash
   fi
 }
+
+alias aria2c-fast='aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true'
+alias aria2c-large='aria2c --max-connection-per-server=16 --split=16 --min-split-size=20M --continue=true'
+
+hf_push() {
+    if [ $# -lt 2 ]; then
+        echo "Usage: hf_push <ssh_target> [ssh_opts...] <model_name>"
+        echo "Example: hf_push labgpu Qwen/Qwen3-8B"
+        echo "         hf_push user@host -p 2022 Qwen/Qwen3-8B"
+        return 1
+    fi
+
+    # 提取最后一个参数作为 model，其余为 ssh 目标参数
+    local model="${@: -1}"
+    local remote_args=("${@:1:$#-1}")
+
+    local local_base="$HOME/.cache/huggingface/hub"
+    local model_dir="models--${model//\//--}"
+    local remote_path="~/.cache/huggingface/hub/$model_dir/"
+
+    echo "🔄 Syncing HuggingFace model cache: $model"
+    echo "From: $local_base/$model_dir/"
+    echo "To:   ${remote_args[*]}:$remote_path"
+    echo
+
+    rsync -avzP --links -e "ssh ${remote_args[*]}" \
+        "$local_base/$model_dir/" \
+        "$(echo "${remote_args[0]}" | awk '{print $1}'):$remote_path"
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Sync complete: $model"
+    else
+        echo "❌ Sync failed."
+    fi
+}
+
+hf_pull() {
+    if [ $# -lt 2 ]; then
+        echo "Usage: hf_pull <ssh_target> [ssh_opts...] <model_name>"
+        echo "Example: hf_pull labgpu Qwen/Qwen3-8B"
+        echo "         hf_pull user@host -p 2022 Qwen/Qwen3-8B"
+        return 1
+    fi
+
+    local model="${@: -1}"
+    local remote_args=("${@:1:$#-1}")
+
+    local local_base="$HOME/.cache/huggingface/hub"
+    local model_dir="models--${model//\//--}"
+    local remote_path="~/.cache/huggingface/hub/$model_dir/"
+
+    echo "🔄 Syncing HuggingFace model cache: $model"
+    echo "From: ${remote_args[*]}:$remote_path"
+    echo "To:   $local_base/$model_dir/"
+    echo
+
+    rsync -avzP --links -e "ssh ${remote_args[*]}" \
+        "$(echo "${remote_args[0]}" | awk '{print $1}'):$remote_path" \
+        "$local_base/$model_dir/"
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Sync complete: $model"
+    else
+        echo "❌ Sync failed."
+    fi
+}
+
+alias ollamad='docker exec -it ollama ollama'
