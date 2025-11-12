@@ -87,6 +87,7 @@ getip() {
   echo "本机所有IP地址:"
   hostname -I
 }
+alias myip='getip'
 
 # GPU 监控
 alias wnv='watch -n 1 nvidia-smi'
