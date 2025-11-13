@@ -18,7 +18,7 @@ curl https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/instal
 ```bash
 # uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-wget -qO- https://astral.sh/uv/install.sh | sh
+# wget -qO- https://astral.sh/uv/install.sh | sh
 
 # miniconda
 cd /tmp
