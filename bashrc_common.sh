@@ -154,10 +154,6 @@ hf_download() {
   HF_ENDPOINT=https://hf-mirror.com python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$1')"
 }
 
-# export UV_DEFAULT_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
-# export HF_ENDPOINT=https://hf-mirror.com
-# export HF_HUB_ENABLE_HF_TRANSFER=1
-
 alias claude='claude --dangerously-skip-permissions'
 alias codex='codex --dangerously-bypass-approvals-and-sandbox'
 claude-switch() {
@@ -340,3 +336,9 @@ hf_pull() {
 }
 
 alias ollamad='docker exec -it ollama ollama'
+
+export UV_DEFAULT_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+export PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+export PIP_TRUSTED_HOST="mirrors.tuna.tsinghua.edu.cn"
+export HF_ENDPOINT=https://hf-mirror.com
+export HF_HUB_ENABLE_HF_TRANSFER=1
