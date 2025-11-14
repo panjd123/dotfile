@@ -20,6 +20,13 @@ curl https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/instal
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # wget -qO- https://astral.sh/uv/install.sh | sh
 
+# vllm
+mkdir -p opt/vllm
+cd opt/vllm
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install vllm --torch-backend=auto
+
 # miniconda
 cd /tmp
 wget -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
