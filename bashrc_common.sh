@@ -412,4 +412,4 @@ export UV_DEFAULT_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 export PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 export PIP_TRUSTED_HOST="mirrors.tuna.tsinghua.edu.cn"
 export HF_ENDPOINT=https://hf-mirror.com
-export HF_HUB_ENABLE_HF_TRANSFER=1
+# export HF_HUB_ENABLE_HF_TRANSFER=1
