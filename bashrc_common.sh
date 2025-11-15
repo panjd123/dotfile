@@ -451,7 +451,7 @@ vllm_bench() {
     --async-engine
 }
 
-alias hf_bench='run_vllm_bench'
+alias hf_bench='vllm_bench'
 
 alias ollamad='docker exec -it ollama ollama'
 
