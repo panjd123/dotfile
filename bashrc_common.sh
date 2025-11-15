@@ -39,6 +39,25 @@ alias bd='cd "$OLDPWD"'
 
 # 网络相关
 alias ports='netstat -tulnp | grep LISTEN'
+
+ssh_info() {
+  if [ -z "$SSH_CONNECTION" ]; then
+    echo "Not an SSH session"
+    return 1
+  fi
+
+  set -- $SSH_CONNECTION
+  client_ip=$1
+  client_port=$2
+  server_ip=$3
+  server_port=$4
+
+  echo "Client IP:      $client_ip"
+  echo "Client Port:    $client_port"
+  echo "Server IP:      $server_ip"
+  echo "Server Port:    $server_port"
+}
+
 port() {
   # 1. 检查参数
   if [ -z "$1" ]; then
@@ -86,6 +105,9 @@ getip() {
   echo "--------------------------------"
   echo "本机所有IP地址:"
   hostname -I
+  echo "--------------------------------"
+  echo "SSH连接信息（如果适用）:"
+  ssh_info || echo "非SSH连接"
 }
 alias myip='getip'
 
