@@ -311,85 +311,98 @@ dockerbash() {
 alias aria2c-fast='aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true'
 alias aria2c-large='aria2c --max-connection-per-server=16 --split=16 --min-split-size=20M --continue=true'
 
-hf_push() {
+_hf_sync() {
     if [ $# -lt 2 ]; then
-        echo "Usage: hf_push <ssh_target> [ssh_opts...] <model_name>"
-        echo "Example: hf_push labgpu Qwen/Qwen3-8B"
-        echo "         hf_push user@host -p 2022 Qwen/Qwen3-8B"
+        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...] <model_name>"
+        echo "Example: ${FUNCNAME[1]} user@host -p 2022 Qwen/Qwen3-8B"
         return 1
     fi
 
-    # 最后一个参数是模型名
     local model="${@: -1}"
-    # 其余是 SSH 目标和可选参数
     local remote_args=("${@:1:$#-1}")
 
     local local_base="$HOME/.cache/huggingface/hub"
     local model_dir="models--${model//\//--}"
-    local remote_path="~/.cache/huggingface/hub/$model_dir/"
+    local local_dir="$local_base/$model_dir/"
+    local remote_dir="~/.cache/huggingface/hub/$model_dir/"
 
-    echo "🔄 Syncing HuggingFace model cache: $model"
-    echo "From: $local_base/$model_dir/"
-    echo "To:   ${remote_args[*]}:$remote_path"
-    echo
-
-    # 构建 SSH 命令
     local ssh_cmd="ssh"
     if [ ${#remote_args[@]} -gt 1 ]; then
-        ssh_cmd+=" ${remote_args[@]:1}"  # 添加 ssh 额外参数
+        ssh_cmd+=" ${remote_args[@]:1}"
     fi
 
-    # 执行 rsync
-    rsync -avzP --links -e "$ssh_cmd" \
-        "$local_base/$model_dir/" \
-        "${remote_args[0]}:$remote_path"
+    echo "🔄 Syncing HuggingFace model cache: $model"
 
-    if [ $? -eq 0 ]; then
-        echo "✅ Sync complete: $model"
+    if [[ "${FUNCNAME[1]}" == "hf_push" ]]; then
+        echo "Pushing local -> remote"
+        echo "From: $local_dir"
+        echo "To:   ${remote_args[0]}:$remote_dir"
+        rsync -avzP --mkpath --links -e "$ssh_cmd" "$local_dir" "${remote_args[0]}:$remote_dir"
+    elif [[ "${FUNCNAME[1]}" == "hf_pull" ]]; then
+        echo "Pulling remote -> local"
+        echo "From: ${remote_args[0]}:$remote_dir"
+        echo "To:   $local_dir"
+        rsync -avzP --mkpath --links -e "$ssh_cmd" "${remote_args[0]}:$remote_dir" "$local_dir"
     else
-        echo "❌ Sync failed."
-    fi
-}
-
-hf_pull() {
-    if [ $# -lt 2 ]; then
-        echo "Usage: hf_pull <ssh_target> [ssh_opts...] <model_name>"
-        echo "Example: hf_pull labgpu Qwen/Qwen3-8B"
-        echo "         hf_pull user@host -p 2022 Qwen/Qwen3-8B"
+        echo "❌ Unknown function name"
         return 1
     fi
 
-    # 最后一个参数是模型名
-    local model="${@: -1}"
-    # 前面的参数是目标和 ssh 选项
-    local remote_args=("${@:1:$#-1}")
-
-    local local_base="$HOME/.cache/huggingface/hub"
-    local model_dir="models--${model//\//--}"
-    local remote_path="~/.cache/huggingface/hub/$model_dir/"
-
-    echo "🔄 Syncing HuggingFace model cache: $model"
-    echo "From: ${remote_args[*]}:$remote_path"
-    echo "To:   $local_base/$model_dir/"
-    echo
-
-    # 构建 SSH 命令
-    local ssh_cmd="ssh"
-    if [ ${#remote_args[@]} -gt 1 ]; then
-        ssh_cmd+=" ${remote_args[@]:1}"  # 添加 ssh 额外参数
-    fi
-
-    # 执行 rsync
-    rsync -avzP --links -e "$ssh_cmd" \
-        "${remote_args[0]}:$remote_path" \
-        "$local_base/$model_dir/"
-
     if [ $? -eq 0 ]; then
         echo "✅ Sync complete: $model"
     else
-        echo "❌ Sync failed."
+        echo "❌ Sync failed: $model"
     fi
 }
+
+hf_push() { _hf_sync "$@"; }
+hf_pull() { _hf_sync "$@"; }
+
+_data_sync() {
+    if [ $# -lt 2 ]; then
+        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...] <dir_name>"
+        echo "Example: ${FUNCNAME[1]} user@host -p 2022 data"
+        return 1
+    fi
+
+    local dir="${@: -1}"
+    local remote_args=("${@:1:$#-1}")
+
+    local local_dir="$HOME/$dir"
+    local remote_dir="~/$dir"
+
+    local ssh_cmd="ssh"
+    if [ ${#remote_args[@]} -gt 1 ]; then
+        ssh_cmd+=" ${remote_args[@]:1}"
+    fi
+
+    echo "🔄 Syncing directory: $dir"
+
+    if [[ "${FUNCNAME[1]}" == "data_push" ]]; then
+        echo "Pushing local -> remote"
+        echo "From: $local_dir/"
+        echo "To:   ${remote_args[0]}:$remote_dir/"
+        rsync -avzP --mkpath --links -e "$ssh_cmd" "$local_dir/" "${remote_args[0]}:$remote_dir/"
+    elif [[ "${FUNCNAME[1]}" == "data_pull" ]]; then
+        echo "Pulling remote -> local"
+        echo "From: ${remote_args[0]}:$remote_dir/"
+        echo "To:   $local_dir/"
+        rsync -avzP --mkpath --links -e "$ssh_cmd" "${remote_args[0]}:$remote_dir/" "$local_dir/"
+    else
+        echo "❌ Unknown function name"
+        return 1
+    fi
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Sync complete"
+    else
+        echo "❌ Sync failed"
+    fi
+}
+
+# 对外接口
+data_push() { _data_sync "$@"; }
+data_pull() { _data_sync "$@"; }
 
 hf_list() {
     local CACHE_DIR="${HF_HOME:-$HOME/.cache}/huggingface/hub"
