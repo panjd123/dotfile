@@ -186,21 +186,29 @@ extract() {
 
 
 a() {
-    local target=".venv/bin/activate"
-
-    # 如果传入参数，则使用参数路径
+    local base="."
     if [ $# -gt 0 ]; then
-        target="$1/.venv/bin/activate"
+        base="$1"
     fi
 
-    # 检查文件是否存在
-    if [ -f "$target" ]; then
-        # 使用 source 或 . 激活虚拟环境
-        source "$target"
-    else
-        echo "❌ 未找到虚拟环境：$target"
-        return 1
+    # 去掉末尾的斜杠
+    base="${base%/}"
+
+    local cand1="$base/.venv/bin/activate"
+    local cand2="$base/bin/activate"
+
+    if [ -f "$cand1" ]; then
+        source "$cand1"
+        return
     fi
+
+    if [ -f "$cand2" ]; then
+        source "$cand2"
+        return
+    fi
+
+    echo "❌ 未找到虚拟环境：$cand1 或 $cand2"
+    return 1
 }
 alias va=a
 
