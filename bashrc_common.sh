@@ -491,4 +491,4 @@ proxy() {
   export NO_PROXY=$no_proxy
 }
 
-alias aptp='apt -o Acquire::http::Proxy="$http_proxy" -o Acquire::https::Proxy="$http_proxy"'
+alias aptp='sudo apt -o Acquire::http::Proxy="$http_proxy" -o Acquire::https::Proxy="$http_proxy"'
