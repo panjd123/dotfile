@@ -475,6 +475,7 @@ vllm_bench() {
 alias hf_bench='vllm_bench'
 
 alias ollamad='docker exec -it ollama ollama'
+alias vllamad='docker exec -it vllama vllama'
 
 export UV_DEFAULT_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 export PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
