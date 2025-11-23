@@ -238,7 +238,7 @@ alias sdown='systemctl stop'
 alias sstatus='systemctl status'
 alias ssta='systemctl status'
 
-alias su='systemctl --user'
+# alias su='systemctl --user'
 alias suup='systemctl --user start'
 alias sudown='systemctl --user stop'
 alias sustatus='systemctl --user status'
