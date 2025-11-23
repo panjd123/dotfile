@@ -16,6 +16,12 @@ curl https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/instal
 ## Useful Software Install Scripts
 
 ```bash
+# nvidia
+sudo apt remove --purge 'nvidia-*' 'libnvidia-*'
+sudo add-apt-repository ppa:graphics-drivers/ppa
+sudo apt install -y nvidia-driver-580
+sudo apt install -y nvidia-container-toolkit
+
 # uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # wget -qO- https://astral.sh/uv/install.sh | sh
