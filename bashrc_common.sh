@@ -449,6 +449,58 @@ hf_list() {
     done
 }
 
+_claude_sync() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...]"
+        echo "Example: ${FUNCNAME[1]} user@host -p 2022"
+        return 1
+    fi
+
+    local remote_args=("$@")
+
+    local local_dir="$HOME/.claude/"
+    local remote_dir="~/.claude/"
+
+    local ssh_cmd="ssh"
+    if [ ${#remote_args[@]} -gt 1 ]; then
+        ssh_cmd+=" ${remote_args[@]:1}"
+    fi
+
+    echo "Syncing Claude settings: settings.json and settings.json.*"
+
+    if [[ "${FUNCNAME[1]}" == "claude-push" ]]; then
+        echo "Pushing local -> remote"
+        echo "From: $local_dir"
+        echo "To:   ${remote_args[0]}:$remote_dir"
+        rsync -avzP --mkpath -e "$ssh_cmd" \
+            --include='settings.json' \
+            --include='settings.json.*' \
+            --exclude='*' \
+            "$local_dir" "${remote_args[0]}:$remote_dir"
+    elif [[ "${FUNCNAME[1]}" == "claude-pull" ]]; then
+        echo "Pulling remote -> local"
+        echo "From: ${remote_args[0]}:$remote_dir"
+        echo "To:   $local_dir"
+        rsync -avzP --mkpath -e "$ssh_cmd" \
+            --include='settings.json' \
+            --include='settings.json.*' \
+            --exclude='*' \
+            "${remote_args[0]}:$remote_dir" "$local_dir"
+    else
+        echo "Unknown function name"
+        return 1
+    fi
+
+    if [ $? -eq 0 ]; then
+        echo "Sync complete"
+    else
+        echo "Sync failed"
+    fi
+}
+
+claude-push() { _claude_sync "$@"; }
+claude-pull() { _claude_sync "$@"; }
+
 vllm_bench() {
   model=${1:-"Qwen/Qwen3-4B-Instruct-2507"}
   input_len=${2:-4096}
