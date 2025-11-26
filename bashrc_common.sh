@@ -228,7 +228,6 @@ claude-switch() {
     else
         echo "Profile $1 does not exist."
         ls -1 ~/.claude/settings.json.*
-        return 1
     fi
     cat ~/.claude/settings.json
 }
