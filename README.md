@@ -5,7 +5,8 @@
 ## How to install
 
 ```bash
-git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
+# git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
+git clone https://github.com/panjd123/dotfile.git $HOME/.dotfile
 ~/.dotfile/install_dotfile.sh
 ```
 
