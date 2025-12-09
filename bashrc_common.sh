@@ -218,7 +218,7 @@ hf_download() {
   HF_ENDPOINT=https://hf-mirror.com python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$1')"
 }
 
-alias claude='IS_SANDBOX=1 claude --dangerously-skip-permissions'
+alias claude='CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 IS_SANDBOX=1 claude --dangerously-skip-permissions'
 alias codex='codex --dangerously-bypass-approvals-and-sandbox'
 claude-switch() {
     # if exist ~/.claude/settings.json.$1, copy to ~/.claude/settings.json
