@@ -116,9 +116,8 @@ CUDA kernel 计时时的要求如下：
    * 仅在最开始执行 **一轮 warmup（不计时）**
    * 使用 **CUDA Graph 捕获 kernel 执行**
    * 在 graph 中，一轮执行的 kernel 次数应为
-     **大于 100 的、`num_payloads` 的最小倍数**
-   * 正式测试阶段通过 **graph replay** 重复执行
-   * **程序应接受一个输入参数：总调用次数（--iters）**，并根据该值决定 replay 次数，你可以稍微超过 --iters，比如取最小的倍数
+     8 * num_payloads
+   * 正式测试阶段通过 **graph replay** 重复执行，重复执行次数为 replay 8 次
    * 计时范围仅包含 **graph replay**
 
 5. **统计方式：**
