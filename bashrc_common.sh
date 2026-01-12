@@ -236,6 +236,21 @@ claude_switch() {
 }
 alias cls='claude_switch'
 alias claude-switch='claude_switch'
+codex_switch() {
+    # if exist ~/.codex/config.toml.$1 and ~/.codex/auth.json.$1, copy to ~/.codex/config.toml and ~/.codex/auth.json
+    if [ -f ~/.codex/config.toml.$1 ] && [ -f ~/.codex/auth.json.$1 ]; then
+        cp ~/.codex/config.toml.$1 ~/.codex/config.toml
+        cp ~/.codex/auth.json.$1 ~/.codex/auth.json
+        echo "Switched to Codex profile: $1"
+    else
+        echo "Profile $1 does not exist."
+        ls -1 ~/.codex/config.toml.*
+        ls -1 ~/.codex/auth.json.*
+    fi
+    cat ~/.codex/config.toml
+}
+alias cxs='codex_switch'
+alias codex-switch='codex_switch'
 
 # systemctl 相关
 alias sup='systemctl start'
@@ -537,7 +552,9 @@ _codex_sync() {
         echo "To:   ${remote_args[0]}:$remote_dir"
         rsync -avzP --mkpath -e "$ssh_cmd" \
             --include='config.toml' \
+            --include='config.toml.*' \
             --include='auth.json' \
+            --include='auth.json.*' \
             --exclude='*' \
             "$local_dir" "${remote_args[0]}:$remote_dir"
     elif [[ "${FUNCNAME[1]}" == "codex_pull" ]]; then
@@ -546,7 +563,9 @@ _codex_sync() {
         echo "To:   $local_dir"
         rsync -avzP --mkpath -e "$ssh_cmd" \
             --include='config.toml' \
+            --include='config.toml.*' \
             --include='auth.json' \
+            --include='auth.json.*' \
             --exclude='*' \
             "${remote_args[0]}:$remote_dir" "$local_dir"
     else
