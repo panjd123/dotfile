@@ -1021,3 +1021,4 @@ function check_proxy() {
     fi
     echo "------------------------------------------------"
 }
+alias check-proxy='check_proxy'
