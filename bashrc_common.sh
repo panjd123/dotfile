@@ -1022,3 +1022,5 @@ function check_proxy() {
     echo "------------------------------------------------"
 }
 alias check-proxy='check_proxy'
+alias proxy-test='check_proxy'
+alias proxy_test='check_proxy'
