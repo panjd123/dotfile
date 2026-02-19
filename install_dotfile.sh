@@ -6,12 +6,19 @@ DOTFILES_DIR="$HOME/.dotfile"
 COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
 INSTALL_METHOD_FILE="$DOTFILES_DIR/.install_method"
 AUTHORIZED_KEYS_FILE="$HOME/.ssh/authorized_keys"
+SSHD_CONFIG_FILE="/etc/ssh/sshd_config"
 
 # 预定义的公钥列表
 SSH_PUBLIC_KEYS=(
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG3Mt/bijvkMa15XthVwRu1BHH/WE66IaiYXyQonN6RX 1747366367@qq.com"
-  # 可以在这里添加更多公钥
   # "ssh-ed25519 AAAA... user@example.com"
+)
+
+# SSH 配置检查列表
+SSH_CONFIG_CHECKS=(
+  "PubkeyAuthentication yes"
+  # "PasswordAuthentication no" # 如果需要强制密钥登录，可取消此行注释
+  # "PermitRootLogin no"        # 如果需要禁止 root 登录，可取消此行注释
 )
 
 echo "[dotfile] 检查 dotfile 仓库..."
@@ -34,59 +41,181 @@ else
   echo "[dotfile] ~/.bashrc 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
 fi
 
-# 函数：安装 SSH 公钥
-install_ssh_keys() {
-  local auth_keys_file="$AUTHORIZED_KEYS_FILE"
-  local ssh_dir
-  ssh_dir=$(dirname "$auth_keys_file")
+# --- 检查与计划阶段 ---
+
+declare -a PLAN_SSH_CONFIG=() # 存储计划修改的配置项
+declare -a PLAN_SSH_KEYS=()   # 存储计划添加的公钥
+
+# 函数：检查 SSH 配置变更
+plan_sshd_changes() {
+  if [ ! -f "$SSHD_CONFIG_FILE" ]; then return; fi
+
+  for item in "${SSH_CONFIG_CHECKS[@]}"; do
+    local key=${item%% *}
+    local value=${item#* }
+    
+    # 获取当前生效的配置（忽略注释行）
+    local current_setting
+    current_setting=$(grep -E "^[[:space:]]*${key}" "$SSHD_CONFIG_FILE" 2>/dev/null || true)
+
+    if [[ -z "$current_setting" ]]; then
+      # 配置缺失
+      PLAN_SSH_CONFIG+=("新增配置: ${key} ${value}")
+    else
+      local current_value
+      current_value=$(echo "$current_setting" | awk '{print $2}')
+      if [[ "$current_value" != "$value" ]]; then
+        # 配置值不同
+        PLAN_SSH_CONFIG+=("修改配置: ${key} [${current_value}] -> [${value}]")
+      fi
+    fi
+  done
+}
+
+# 函数：检查 SSH 公钥变更
+plan_key_changes() {
+  # 如果文件不存在，所有密钥都需要添加
+  if [ ! -f "$AUTHORIZED_KEYS_FILE" ]; then
+    for key in "${SSH_PUBLIC_KEYS[@]}"; do
+      PLAN_SSH_KEYS+=("新增公钥: ${key:0:50}...")
+    done
+    return
+  fi
+
+  # 检查每个密钥是否存在
+  for key in "${SSH_PUBLIC_KEYS[@]}"; do
+    local key_fingerprint
+    key_fingerprint=$(echo "$key" | awk '{print $2}')
+    
+    if ! grep -qF "$key_fingerprint" "$AUTHORIZED_KEYS_FILE"; then
+      PLAN_SSH_KEYS+=("新增公钥: ${key:0:50}...")
+    fi
+  done
+}
+
+# --- 执行阶段 ---
+
+apply_sshd_changes() {
+  local config_changed=false
   
-  # 确保 .ssh 目录存在并设置正确权限
+  for item in "${SSH_CONFIG_CHECKS[@]}"; do
+    local key=${item%% *}
+    local value=${item#* }
+    
+    local current_setting
+    current_setting=$(grep -E "^[[:space:]]*${key}" "$SSHD_CONFIG_FILE" 2>/dev/null || true)
+
+    if [[ -z "$current_setting" ]]; then
+      # 追加配置
+      echo "${key} ${value}" | sudo tee -a "$SSHD_CONFIG_FILE" > /dev/null
+      config_changed=true
+    else
+      local current_value
+      current_value=$(echo "$current_setting" | awk '{print $2}')
+      if [[ "$current_value" != "$value" ]]; then
+        # 替换配置
+        sudo sed -i "s|^[[:space:]]*${key}.*|${key} ${value}|g" "$SSHD_CONFIG_FILE"
+        config_changed=true
+      fi
+    fi
+  done
+
+  if [ "$config_changed" = true ]; then
+    echo "[dotfile] 正在重启 SSH 服务..."
+    if command -v systemctl &> /dev/null; then
+      sudo systemctl restart sshd || sudo systemctl restart ssh
+    elif command -v service &> /dev/null; then
+      sudo service sshd restart || sudo service ssh restart
+    else
+      echo "[dotfile] 警告: 无法自动重启 SSH 服务，请手动重启以应用更改。"
+    fi
+  fi
+}
+
+apply_key_changes() {
+  local ssh_dir
+  ssh_dir=$(dirname "$AUTHORIZED_KEYS_FILE")
+  
   if [ ! -d "$ssh_dir" ]; then
-    echo "[dotfile] 创建 .ssh 目录..."
     mkdir -p "$ssh_dir"
     chmod 700 "$ssh_dir"
   fi
   
-  # 确保 authorized_keys 文件存在
-  if [ ! -f "$auth_keys_file" ]; then
-    echo "[dotfile] 创建 authorized_keys 文件..."
-    touch "$auth_keys_file"
-    chmod 600 "$auth_keys_file"
+  if [ ! -f "$AUTHORIZED_KEYS_FILE" ]; then
+    touch "$AUTHORIZED_KEYS_FILE"
+    chmod 600 "$AUTHORIZED_KEYS_FILE"
   fi
   
-  local added_count=0
-  local skipped_count=0
-  
-  echo "[dotfile] 开始安装 SSH 公钥..."
-  
+  for key in "${PLAN_SSH_KEYS[@]%%:*}"; do
+    # 这里只取密钥本身，PLAN_SSH_KEYS 里存的是描述文本，我们需要原始密钥
+    # 为了简化逻辑，这里直接遍历原始数组再次检查写入
+    : # 占位，下方会重新遍历 SSH_PUBLIC_KEYS
+  done
+
+  # 实际写入逻辑
   for key in "${SSH_PUBLIC_KEYS[@]}"; do
-    # 提取公钥的指纹部分（去掉末尾的注释）
     local key_fingerprint
     key_fingerprint=$(echo "$key" | awk '{print $2}')
     
-    # 检查是否已存在
-    if grep -qF "$key_fingerprint" "$auth_keys_file"; then
-      echo "[dotfile] 公钥已存在，跳过: ${key:0:50}..."
-      ((skipped_count++))
-    else
-      echo "$key" >> "$auth_keys_file"
-      echo "[dotfile] 已添加公钥: ${key:0:50}..."
-      ((added_count++))
+    if ! grep -qF "$key_fingerprint" "$AUTHORIZED_KEYS_FILE"; then
+      echo "$key" >> "$AUTHORIZED_KEYS_FILE"
     fi
   done
-  
-  echo "[dotfile] SSH 公钥安装完成。新增: $added_count, 跳过: $skipped_count"
 }
 
-# 询问是否安装 SSH 公钥
+# --- 主逻辑 ---
+
+echo "正在扫描系统变更..."
+plan_sshd_changes
+plan_key_changes
+
+# 如果没有任何变更
+if [ ${#PLAN_SSH_CONFIG[@]} -eq 0 ] && [ ${#PLAN_SSH_KEYS[@]} -eq 0 ]; then
+  echo "[dotfile] SSH 配置与公钥均已是最新状态，无需操作。"
+  echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
+  exit 0
+fi
+
+# 展示计划
 echo ""
-read -p "[dotfile] 是否要安装预定义的 SSH 公钥到本机？(y/n): " -n 1 -r
+echo "=========================================="
+echo "         检测到以下待变更项"
+echo "=========================================="
+
+if [ ${#PLAN_SSH_CONFIG[@]} -gt 0 ]; then
+  echo -e "\n[SSH 配置变更] (将修改 $SSHD_CONFIG_FILE):"
+  printf "  - %s\n" "${PLAN_SSH_CONFIG[@]}"
+fi
+
+if [ ${#PLAN_SSH_KEYS[@]} -gt 0 ]; then
+  echo -e "\n[SSH 公钥变更] (将写入 $AUTHORIZED_KEYS_FILE):"
+  printf "  - %s\n" "${PLAN_SSH_KEYS[@]}"
+fi
+
+echo ""
+read -p "[dotfile] 是否执行上述变更？: " -n 1 -r
 echo ""
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-  install_ssh_keys
+  echo "[dotfile] 开始执行变更..."
+  
+  # 执行 SSH 配置变更
+  if [ ${#PLAN_SSH_CONFIG[@]} -gt 0 ]; then
+    # 检查 sudo 权限
+    if [ ! -w "$SSHD_CONFIG_FILE" ] && ! sudo -n true 2>/dev/null; then
+       echo "[dotfile] 修改 SSH 配置需要 sudo 权限。"
+    fi
+    apply_sshd_changes
+  fi
+  
+  # 执行公钥变更
+  if [ ${#PLAN_SSH_KEYS[@]} -gt 0 ]; then
+    apply_key_changes
+  fi
+  
+  echo "[dotfile] 变更已完成。"
 else
-  echo "[dotfile] 跳过 SSH 公钥安装。"
+  echo "[dotfile] 已取消变更。"
 fi
 
 echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
