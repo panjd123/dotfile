@@ -14,12 +14,20 @@ SSH_PUBLIC_KEYS=(
   # "ssh-ed25519 AAAA... user@example.com"
 )
 
-# SSH 配置检查列表
+# SSH 配置检查列表 (格式: "Key Value")
 SSH_CONFIG_CHECKS=(
   "PubkeyAuthentication yes"
   # "PasswordAuthentication no" # 如果需要强制密钥登录，可取消此行注释
   # "PermitRootLogin no"        # 如果需要禁止 root 登录，可取消此行注释
 )
+
+# SSH 默认值映射表 (用于处理配置文件中未显式定义的情况)
+# 依据 man sshd_config 填写常见默认值
+declare -A DEFAULT_SSH_VALUES
+DEFAULT_SSH_VALUES["PubkeyAuthentication"]="yes"
+DEFAULT_SSH_VALUES["PasswordAuthentication"]="yes"
+DEFAULT_SSH_VALUES["PermitRootLogin"]="prohibit-password" # 或 "yes" 取决于发行版，这里按常见默认值
+# 如果有其他需要监控的配置项，可在此添加
 
 echo "[dotfile] 检查 dotfile 仓库..."
 
@@ -52,22 +60,33 @@ plan_sshd_changes() {
 
   for item in "${SSH_CONFIG_CHECKS[@]}"; do
     local key=${item%% *}
-    local value=${item#* }
+    local target_value=${item#* }
     
-    # 获取当前生效的配置（忽略注释行）
+    # 获取当前生效的配置（忽略注释行，只取第一个匹配项）
     local current_setting
-    current_setting=$(grep -E "^[[:space:]]*${key}" "$SSHD_CONFIG_FILE" 2>/dev/null || true)
+    current_setting=$(grep -E "^[[:space:]]*${key}" "$SSHD_CONFIG_FILE" 2>/dev/null | head -n 1 || true)
 
-    if [[ -z "$current_setting" ]]; then
-      # 配置缺失
-      PLAN_SSH_CONFIG+=("新增配置: ${key} ${value}")
-    else
+    if [[ -n "$current_setting" ]]; then
+      # 1. 配置项存在：检查值是否一致
       local current_value
       current_value=$(echo "$current_setting" | awk '{print $2}')
-      if [[ "$current_value" != "$value" ]]; then
-        # 配置值不同
-        PLAN_SSH_CONFIG+=("修改配置: ${key} [${current_value}] -> [${value}]")
+      
+      if [[ "$current_value" != "$target_value" ]]; then
+        PLAN_SSH_CONFIG+=("修改配置: ${key} [${current_value}] -> [${target_value}]")
       fi
+    else
+      # 2. 配置项不存在：检查默认值
+      local default_value="${DEFAULT_SSH_VALUES[$key]}"
+      
+      # 只有当默认值不存在，或者默认值与目标值不符时，才需要添加配置
+      if [[ -z "$default_value" ]]; then
+        # 未知默认值，为了安全起见，建议添加显式配置
+        PLAN_SSH_CONFIG+=("新增配置: ${key} ${target_value} (未知默认值)")
+      elif [[ "$default_value" != "$target_value" ]]; then
+        # 默认值不符合预期，需要显式添加
+        PLAN_SSH_CONFIG+=("新增配置: ${key} ${target_value} (默认为 ${default_value})")
+      fi
+      # 如果默认值 == 目标值，则无需操作，符合预期
     fi
   done
 }
@@ -96,7 +115,6 @@ plan_key_changes() {
 # --- 执行阶段 ---
 
 apply_sshd_changes() {
-  # 参数: $1 = use_sudo (true/false)
   local use_sudo="$1"
   local config_changed=false
   local sudo_cmd=""
@@ -107,21 +125,28 @@ apply_sshd_changes() {
 
   for item in "${SSH_CONFIG_CHECKS[@]}"; do
     local key=${item%% *}
-    local value=${item#* }
+    local target_value=${item#* }
     
+    # 再次检查当前状态（防止在计划期间文件被修改，或者数组顺序问题）
     local current_setting
-    current_setting=$(grep -E "^[[:space:]]*${key}" "$SSHD_CONFIG_FILE" 2>/dev/null || true)
+    current_setting=$(grep -E "^[[:space:]]*${key}" "$SSHD_CONFIG_FILE" 2>/dev/null | head -n 1 || true)
 
-    if [[ -z "$current_setting" ]]; then
-      # 追加配置
-      echo "${key} ${value}" | $sudo_cmd tee -a "$SSHD_CONFIG_FILE" > /dev/null
-      config_changed=true
-    else
+    if [[ -n "$current_setting" ]]; then
       local current_value
       current_value=$(echo "$current_setting" | awk '{print $2}')
-      if [[ "$current_value" != "$value" ]]; then
+      if [[ "$current_value" != "$target_value" ]]; then
         # 替换配置
-        $sudo_cmd sed -i "s|^[[:space:]]*${key}.*|${key} ${value}|g" "$SSHD_CONFIG_FILE"
+        $sudo_cmd sed -i "s|^[[:space:]]*${key}.*|${key} ${target_value}|g" "$SSHD_CONFIG_FILE"
+        config_changed=true
+      fi
+    else
+      # 配置项不存在，根据计划逻辑，这里只有当默认值不对或未知时才会执行到这里
+      # 我们需要追加配置
+      
+      # 再次确认默认值逻辑（严谨起见，防止并发修改导致状态变化，虽然概率极低）
+      local default_value="${DEFAULT_SSH_VALUES[$key]}"
+      if [[ -z "$default_value" ]] || [[ "$default_value" != "$target_value" ]]; then
+        echo "${key} ${target_value}" | $sudo_cmd tee -a "$SSHD_CONFIG_FILE" > /dev/null
         config_changed=true
       fi
     fi
@@ -210,7 +235,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
       apply_sshd_changes false
     else
       echo "[dotfile] SSH 配置文件需要管理员权限，正在请求 sudo..."
-      # 验证 sudo 权限是否可用 (-v: validate, 验证并刷新时间戳)
+      # 验证 sudo 权限是否可用
       if sudo -v 2>/dev/null; then
         apply_sshd_changes true
       else
