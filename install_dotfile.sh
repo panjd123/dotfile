@@ -96,6 +96,7 @@ plan_key_changes() {
 # --- 执行阶段 ---
 
 apply_sshd_changes() {
+  local use_sudo="$1"
   local config_changed=false
   
   for item in "${SSH_CONFIG_CHECKS[@]}"; do
@@ -107,14 +108,22 @@ apply_sshd_changes() {
 
     if [[ -z "$current_setting" ]]; then
       # 追加配置
-      echo "${key} ${value}" | sudo tee -a "$SSHD_CONFIG_FILE" > /dev/null
+      if [ "$use_sudo" = true ]; then
+        echo "${key} ${value}" | sudo tee -a "$SSHD_CONFIG_FILE" > /dev/null
+      else
+        echo "${key} ${value}" >> "$SSHD_CONFIG_FILE"
+      fi
       config_changed=true
     else
       local current_value
       current_value=$(echo "$current_setting" | awk '{print $2}')
       if [[ "$current_value" != "$value" ]]; then
         # 替换配置
-        sudo sed -i "s|^[[:space:]]*${key}.*|${key} ${value}|g" "$SSHD_CONFIG_FILE"
+        if [ "$use_sudo" = true ]; then
+          sudo sed -i "s|^[[:space:]]*${key}.*|${key} ${value}|g" "$SSHD_CONFIG_FILE"
+        else
+          sed -i "s|^[[:space:]]*${key}.*|${key} ${value}|g" "$SSHD_CONFIG_FILE"
+        fi
         config_changed=true
       fi
     fi
@@ -123,9 +132,17 @@ apply_sshd_changes() {
   if [ "$config_changed" = true ]; then
     echo "[dotfile] 正在重启 SSH 服务..."
     if command -v systemctl &> /dev/null; then
-      sudo systemctl restart sshd || sudo systemctl restart ssh
+      if [ "$use_sudo" = true ]; then
+        sudo systemctl restart sshd || sudo systemctl restart ssh
+      else
+        systemctl restart sshd || systemctl restart ssh
+      fi
     elif command -v service &> /dev/null; then
-      sudo service sshd restart || sudo service ssh restart
+      if [ "$use_sudo" = true ]; then
+        sudo service sshd restart || sudo service ssh restart
+      else
+        service sshd restart || service ssh restart
+      fi
     else
       echo "[dotfile] 警告: 无法自动重启 SSH 服务，请手动重启以应用更改。"
     fi
@@ -146,12 +163,6 @@ apply_key_changes() {
     chmod 600 "$AUTHORIZED_KEYS_FILE"
   fi
   
-  for key in "${PLAN_SSH_KEYS[@]%%:*}"; do
-    # 这里只取密钥本身，PLAN_SSH_KEYS 里存的是描述文本，我们需要原始密钥
-    # 为了简化逻辑，这里直接遍历原始数组再次检查写入
-    : # 占位，下方会重新遍历 SSH_PUBLIC_KEYS
-  done
-
   # 实际写入逻辑
   for key in "${SSH_PUBLIC_KEYS[@]}"; do
     local key_fingerprint
@@ -201,11 +212,19 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
   
   # 执行 SSH 配置变更
   if [ ${#PLAN_SSH_CONFIG[@]} -gt 0 ]; then
-    # 检查 sudo 权限
-    if [ ! -w "$SSHD_CONFIG_FILE" ] && ! sudo -n true 2>/dev/null; then
-       echo "[dotfile] 修改 SSH 配置需要 sudo 权限。"
+    # 检查是否有写权限
+    if [ -w "$SSHD_CONFIG_FILE" ]; then
+      echo "[dotfile] 有足够权限直接修改 SSH 配置。"
+      apply_sshd_changes false
+    else
+      echo "[dotfile] SSH 配置文件需要管理员权限，正在请求 sudo..."
+      # 验证 sudo 权限是否可用
+      if sudo -v 2>/dev/null; then
+        apply_sshd_changes true
+      else
+        echo "[dotfile] 错误: 无法获取 sudo 权限，跳过 SSH 配置修改。"
+      fi
     fi
-    apply_sshd_changes
   fi
   
   # 执行公钥变更
