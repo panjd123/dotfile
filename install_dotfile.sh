@@ -221,9 +221,8 @@ if [ ${#PLAN_SSH_KEYS[@]} -gt 0 ]; then
 fi
 
 echo ""
-read -p "[dotfile] 是否执行上述变更？: " -n 1 -r
+read -p "[dotfile] 是否执行上述变更？: " -n 1 -r < /dev/tty
 echo ""
-
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo "[dotfile] 开始执行变更..."
