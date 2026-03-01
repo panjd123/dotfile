@@ -224,6 +224,7 @@ echo ""
 read -p "[dotfile] 是否执行上述变更？: " -n 1 -r
 echo ""
 
+
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo "[dotfile] 开始执行变更..."
   
