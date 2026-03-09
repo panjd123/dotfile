@@ -84,6 +84,7 @@ npm install -g @anthropic-ai/claude-code
 
 # codex
 npm install -g @openai/codex
+npm install -g @openai/codex-linux-x64@npm:@openai/codex@0.111.0-linux-x64
 ```
 
 ## Ubuntu24.04 Chromium Lib
