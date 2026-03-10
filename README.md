@@ -68,6 +68,9 @@ nvm install --lts
 node -v
 npm -v
 
+# npm mirror
+npm config set registry https://registry.npmmirror.com/
+
 # rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
