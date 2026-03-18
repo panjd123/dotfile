@@ -241,54 +241,63 @@ claude_switch() {
 alias cls='claude_switch'
 alias claude-switch='claude_switch'
 codex_switch() {
-    # if exist ~/.codex/config.toml.$1 and ~/.codex/auth.json.$1, merge protected fields into ~/.codex/config.toml and copy auth.json
+    # if exist ~/.codex/auth.json.$1, copy auth.json.
+    # if exist ~/.codex/config.toml.$1, merge protected fields into ~/.codex/config.toml as well.
     local profile="${1}"
     local src_config="${HOME}/.codex/config.toml.${profile}"
     local src_auth="${HOME}/.codex/auth.json.${profile}"
     local dst_config="${HOME}/.codex/config.toml"
     local dst_auth="${HOME}/.codex/auth.json"
 
-    if [ -f "$src_config" ] && [ -f "$src_auth" ]; then
-        local backup_root="${HOME}/.codex/backups"
-        local backup_day_dir="${backup_root}/$(date +%F)"
-        local backup_file="${backup_day_dir}/config.toml.$(date +%F_%H%M%S)"
-        local merged_file
-        local tmp_projects
-        local tmp_model
-        local tmp_model_reasoning
-        merged_file="$(mktemp "${dst_config}.merged.XXXXXX")"
-        tmp_projects="$(mktemp "${dst_config}.projects.XXXXXX")"
-        tmp_model="$(mktemp "${dst_config}.model.XXXXXX")"
-        tmp_model_reasoning="$(mktemp "${dst_config}.reasoning.XXXXXX")"
+    local has_src_config="0"
+    if [ -f "$src_config" ]; then
+        has_src_config="1"
+    fi
 
-        if [ -f "$dst_config" ]; then
-            mkdir -p "$backup_day_dir"
-            cp "$dst_config" "$backup_file"
+    if [ -f "$src_auth" ]; then
+        cp "$src_auth" "$dst_auth"
 
-            awk '
-                /^\[projects(\..*)?\][[:space:]]*$/ { in_projects=1; print; next }
-                in_projects && /^\[[^]]+\][[:space:]]*$/ { in_projects=0 }
-                in_projects { print }
-            ' "$dst_config" > "$tmp_projects"
+        if [ "$has_src_config" = "1" ]; then
+            local backup_root="${HOME}/.codex/backups"
+            local backup_day_dir="${backup_root}/$(date +%F)"
+            local backup_file="${backup_day_dir}/config.toml.$(date +%F_%H%M%S)"
+            local merged_file
+            local tmp_projects
+            local tmp_model
+            local tmp_model_reasoning
+            merged_file="$(mktemp "${dst_config}.merged.XXXXXX")"
+            tmp_projects="$(mktemp "${dst_config}.projects.XXXXXX")"
+            tmp_model="$(mktemp "${dst_config}.model.XXXXXX")"
+            tmp_model_reasoning="$(mktemp "${dst_config}.reasoning.XXXXXX")"
 
-            awk 'BEGIN { found=0 }
-                /^[[:space:]]*model[[:space:]]*=/ && found==0 {
-                    print
-                    found=1
-                    exit
-                }
-            ' "$dst_config" > "$tmp_model"
+            if [ -f "$dst_config" ]; then
+                mkdir -p "$backup_day_dir"
+                cp "$dst_config" "$backup_file"
 
-            awk 'BEGIN { found=0 }
-                /^[[:space:]]*model_reasoning_effort[[:space:]]*=/ && found==0 {
-                    print
-                    found=1
-                    exit
-                }
-            ' "$dst_config" > "$tmp_model_reasoning"
-        fi
+                awk '
+                    /^\[projects(\..*)?\][[:space:]]*$/ { in_projects=1; print; next }
+                    in_projects && /^\[[^]]+\][[:space:]]*$/ { in_projects=0 }
+                    in_projects { print }
+                ' "$dst_config" > "$tmp_projects"
 
-        python3 - "$src_config" "$merged_file" "$tmp_projects" "$tmp_model" "$tmp_model_reasoning" <<'PY'
+                awk 'BEGIN { found=0 }
+                    /^[[:space:]]*model[[:space:]]*=/ && found==0 {
+                        print
+                        found=1
+                        exit
+                    }
+                ' "$dst_config" > "$tmp_model"
+
+                awk 'BEGIN { found=0 }
+                    /^[[:space:]]*model_reasoning_effort[[:space:]]*=/ && found==0 {
+                        print
+                        found=1
+                        exit
+                    }
+                ' "$dst_config" > "$tmp_model_reasoning"
+            fi
+
+            python3 - "$src_config" "$merged_file" "$tmp_projects" "$tmp_model" "$tmp_model_reasoning" <<'PY'
 import sys
 from pathlib import Path
 
@@ -337,16 +346,28 @@ if reasoning_line:
 out_path.write_text(source_text)
 PY
 
-        mv "$merged_file" "$dst_config"
-        cp "$src_auth" "$dst_auth"
-        rm -f "$tmp_projects" "$tmp_model" "$tmp_model_reasoning"
-        echo "Switched to Codex profile: $1"
+            mv "$merged_file" "$dst_config"
+            rm -f "$tmp_projects" "$tmp_model" "$tmp_model_reasoning"
+            echo "Switched to Codex profile: $1"
+        else
+            echo "⚠️  No config.toml for profile $1, only auth.json has been switched."
+            if [ -f "$dst_config" ]; then
+                echo "Kept current ~/.codex/config.toml"
+            else
+                echo "No ~/.codex/config.toml exists locally yet."
+            fi
+        fi
     else
         echo "Profile $1 does not exist."
         ls -1 ~/.codex/config.toml.*
         ls -1 ~/.codex/auth.json.*
     fi
-    cat ~/.codex/config.toml
+
+    if [ -f "$dst_config" ]; then
+        cat "$dst_config"
+    else
+        echo "~/.codex/config.toml does not exist."
+    fi
 }
 alias cxs='codex_switch'
 alias codex-switch='codex_switch'
@@ -752,7 +773,11 @@ alias claude-pull='claude_pull'
 _codex_sync() {
     local sync_mode="$1"
     shift
-    _remote_sync "$sync_mode" "$HOME/.codex/" "~/.codex/" "config.toml|config.toml.*|auth.json|auth.json.*" "codex" "" "$@"
+    local patterns="auth.json|auth.json.*"
+    if [ "$sync_mode" = "pull" ]; then
+        patterns="config.toml|config.toml.*|auth.json|auth.json.*"
+    fi
+    _remote_sync "$sync_mode" "$HOME/.codex/" "~/.codex/" "$patterns" "codex" "" "$@"
 }
 
 codex_push() { _codex_sync "push" "$@"; }
