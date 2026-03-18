@@ -241,10 +241,105 @@ claude_switch() {
 alias cls='claude_switch'
 alias claude-switch='claude_switch'
 codex_switch() {
-    # if exist ~/.codex/config.toml.$1 and ~/.codex/auth.json.$1, copy to ~/.codex/config.toml and ~/.codex/auth.json
-    if [ -f ~/.codex/config.toml.$1 ] && [ -f ~/.codex/auth.json.$1 ]; then
-        cp ~/.codex/config.toml.$1 ~/.codex/config.toml
-        cp ~/.codex/auth.json.$1 ~/.codex/auth.json
+    # if exist ~/.codex/config.toml.$1 and ~/.codex/auth.json.$1, merge protected fields into ~/.codex/config.toml and copy auth.json
+    local profile="${1}"
+    local src_config="${HOME}/.codex/config.toml.${profile}"
+    local src_auth="${HOME}/.codex/auth.json.${profile}"
+    local dst_config="${HOME}/.codex/config.toml"
+    local dst_auth="${HOME}/.codex/auth.json"
+
+    if [ -f "$src_config" ] && [ -f "$src_auth" ]; then
+        local backup_file="${dst_config}.bak.$(date +%s)"
+        local merged_file
+        local tmp_projects
+        local tmp_model
+        local tmp_model_reasoning
+        merged_file="$(mktemp "${dst_config}.merged.XXXXXX")"
+        tmp_projects="$(mktemp "${dst_config}.projects.XXXXXX")"
+        tmp_model="$(mktemp "${dst_config}.model.XXXXXX")"
+        tmp_model_reasoning="$(mktemp "${dst_config}.reasoning.XXXXXX")"
+
+        if [ -f "$dst_config" ]; then
+            cp "$dst_config" "$backup_file"
+
+            awk '
+                /^\[projects\]$/ { in_projects=1; print; next }
+                in_projects && /^\[/ { in_projects=0 }
+                in_projects { print }
+            ' "$dst_config" > "$tmp_projects"
+
+            awk 'BEGIN { found=0 }
+                /^[[:space:]]*model[[:space:]]*=/ && found==0 {
+                    print
+                    found=1
+                    exit
+                }
+            ' "$dst_config" > "$tmp_model"
+
+            awk 'BEGIN { found=0 }
+                /^[[:space:]]*model_reasoning_effort[[:space:]]*=/ && found==0 {
+                    print
+                    found=1
+                    exit
+                }
+            ' "$dst_config" > "$tmp_model_reasoning"
+        fi
+
+        python3 - "$src_config" "$merged_file" "$tmp_projects" "$tmp_model" "$tmp_model_reasoning" <<'PY'
+import sys
+from pathlib import Path
+
+src_config_path = Path(sys.argv[1])
+out_path = Path(sys.argv[2])
+projects_path = Path(sys.argv[3])
+model_path = Path(sys.argv[4])
+reasoning_path = Path(sys.argv[5])
+
+source_text = src_config_path.read_text()
+
+projects_block = projects_path.read_text().rstrip("\n")
+model_line = model_path.read_text().rstrip("\n")
+reasoning_line = reasoning_path.read_text().rstrip("\n")
+
+if projects_block:
+    import re
+    source_without_projects = re.sub(
+        r'(?ms)^\[projects\]\s*\n.*?(?=^\[[^\]]+\]|\Z)',
+        '',
+        source_text,
+        count=1
+    )
+    if not source_without_projects.endswith('\n'):
+        source_without_projects += '\n'
+    source_text = f"{source_without_projects.rstrip(chr(10))}\n\n{projects_block}\n"
+
+if model_line:
+    import re
+    source_text, count = re.subn(r'(?m)^\s*model\s*=.*$', model_line, source_text, count=1)
+    if count == 0:
+        if not source_text.endswith('\n'):
+            source_text += '\n'
+        source_text += f"{model_line}\n"
+
+if reasoning_line:
+    import re
+    source_text, count = re.subn(
+        r'(?m)^\s*model_reasoning_effort\s*=.*$',
+        reasoning_line,
+        source_text,
+        count=1
+    )
+    if count == 0:
+        if not source_text.endswith('\n'):
+            source_text += '\n'
+        source_text += f"{reasoning_line}\n"
+
+out_path.write_text(source_text)
+PY
+
+        mv "$merged_file" "$dst_config"
+        cp "$src_auth" "$dst_auth"
+        rm -f "$tmp_projects" "$tmp_model" "$tmp_model_reasoning"
         echo "Switched to Codex profile: $1"
     else
         echo "Profile $1 does not exist."
