@@ -249,7 +249,9 @@ codex_switch() {
     local dst_auth="${HOME}/.codex/auth.json"
 
     if [ -f "$src_config" ] && [ -f "$src_auth" ]; then
-        local backup_file="${dst_config}.bak.$(date +%s)"
+        local backup_root="${HOME}/.codex/backups"
+        local backup_day_dir="${backup_root}/$(date +%F)"
+        local backup_file="${backup_day_dir}/config.toml.$(date +%F_%H%M%S)"
         local merged_file
         local tmp_projects
         local tmp_model
@@ -260,6 +262,7 @@ codex_switch() {
         tmp_model_reasoning="$(mktemp "${dst_config}.reasoning.XXXXXX")"
 
         if [ -f "$dst_config" ]; then
+            mkdir -p "$backup_day_dir"
             cp "$dst_config" "$backup_file"
 
             awk '
