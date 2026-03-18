@@ -988,15 +988,15 @@ alias docker-pull='docker_pull'
 function check_proxy() {
     # 1. 解析输入
     local INPUT=${1:-"10.77.110.128:20172"}
+    local TARGET_URL="${2:-"https://www.google.com"}"
     if [[ -z "$INPUT" ]]; then
-        echo "❌ 用法: check_proxy IP:PORT"
+        echo "❌ 用法: check_proxy IP:PORT [TARGET_URL]"
+        echo "   示例: check_proxy 10.77.110.128:20172 https://www.google.com"
         return 1
     fi
     
     local IP=${INPUT%:*}
     local PORT=${INPUT#*:}
-    local TARGET_URL="http://www.google.com" # 也可以换成 http://www.baidu.com
-    
     # 定义颜色
     local GREEN='\033[0;32m'
     local RED='\033[0;31m'
@@ -1005,6 +1005,7 @@ function check_proxy() {
 
     echo "------------------------------------------------"
     echo -e "🔍 开始测试代理: ${YELLOW}${INPUT}${NC}"
+    echo -e "🎯 目标 URL: ${YELLOW}${TARGET_URL}${NC}"
     echo "------------------------------------------------"
 
     # --- 阶段 1: IP 连通性测试 (Ping) ---
