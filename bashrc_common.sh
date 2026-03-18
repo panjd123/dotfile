@@ -343,48 +343,232 @@ dockerbash() {
 alias aria2c-fast='aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true'
 alias aria2c-large='aria2c --max-connection-per-server=16 --split=16 --min-split-size=20M --continue=true'
 
+_remote_sync_scp_fallback() {
+    local mode="$1"
+    local local_dir="$2"
+    local remote_dir="$3"
+    local remote_target="$4"
+    local patterns_csv="$5"
+    shift 5
+    local remote_opts=("$@")
+
+    local local_dir_clean="${local_dir%/}"
+    local remote_dir_clean="${remote_dir%/}"
+
+    local -a scp_cmd=(scp -r)
+    if [ ${#remote_opts[@]} -gt 0 ]; then
+        scp_cmd+=("${remote_opts[@]}")
+    fi
+
+    local -a ssh_cmd=(ssh)
+    if [ ${#remote_opts[@]} -gt 0 ]; then
+        ssh_cmd+=("${remote_opts[@]}")
+    fi
+
+    case "$mode" in
+        push)
+            "${ssh_cmd[@]}" "$remote_target" "mkdir -p $remote_dir_clean"
+            if [ $? -ne 0 ]; then
+                return 1
+            fi
+            if [ -z "$patterns_csv" ]; then
+                "${scp_cmd[@]}" "$local_dir_clean/." "${remote_target}:${remote_dir_clean}/"
+                return $?
+            fi
+
+            local IFS='|'
+            local -a patterns=()
+            local pattern
+            local local_file
+            local has_source=0
+            read -r -a patterns <<< "$patterns_csv"
+            IFS=$' \t\n'
+
+            for pattern in "${patterns[@]}"; do
+                local matched=0
+                for local_file in "$local_dir_clean/$pattern"; do
+                    if [ -f "$local_file" ]; then
+                        "${scp_cmd[@]}" "$local_file" "${remote_target}:${remote_dir_clean}/"
+                        if [ $? -ne 0 ]; then
+                            return 1
+                        fi
+                        has_source=1
+                        matched=1
+                    fi
+                done
+                if [ "$matched" -eq 0 ]; then
+                    echo "⚠️  跳过不存在的文件: $local_dir_clean/$pattern"
+                fi
+            done
+            if [ "$has_source" -eq 0 ]; then
+                echo "⚠️  未发现可同步文件，已按无变更处理"
+            fi
+            ;;
+        pull)
+            mkdir -p "$local_dir_clean"
+            if [ -z "$patterns_csv" ]; then
+                "${scp_cmd[@]}" "${remote_target}:${remote_dir_clean}/." "$local_dir_clean/"
+                return $?
+            fi
+
+            local IFS='|'
+            local -a patterns=()
+            local pattern
+            local remote_files
+            local found_any=0
+            read -r -a patterns <<< "$patterns_csv"
+            IFS=$' \t\n'
+
+            for pattern in "${patterns[@]}"; do
+                remote_files=$("${ssh_cmd[@]}" "$remote_target" \
+                    "for f in ${remote_dir_clean}/${pattern}; do
+                        [ -e \"$f\" ] && printf '%s\n' \"$f\";
+                    done")
+                if [ -z "$remote_files" ]; then
+                    echo "⚠️  未找到远程文件: ${remote_dir_clean}/${pattern}"
+                    continue
+                fi
+
+                while IFS= read -r remote_file; do
+                    [ -z "$remote_file" ] && continue
+                    "${scp_cmd[@]}" "${remote_target}:${remote_file}" "$local_dir_clean/"
+                    if [ $? -ne 0 ]; then
+                        return 1
+                    fi
+                    found_any=1
+                done <<< "$remote_files"
+            done
+            if [ "$found_any" -eq 0 ]; then
+                echo "⚠️  未找到可同步文件，已按无变更处理"
+            fi
+            ;;
+        *)
+            echo "Unknown sync mode: $mode"
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+_remote_sync() {
+    local mode="$1"
+    local local_dir="$2"
+    local remote_dir="$3"
+    local patterns_csv="$4"
+    local sync_label="$5"
+    local extra_opts="$6"
+    shift 6
+
+    if [ "$mode" != "push" ] && [ "$mode" != "pull" ]; then
+        echo "Unknown sync mode: $mode"
+        return 1
+    fi
+
+    if [ $# -lt 1 ]; then
+        echo "Usage: ${sync_label}_${mode} <ssh_target> [ssh_opts...]"
+        echo "Example: ${sync_label}_${mode} user@host -p 2022"
+        return 1
+    fi
+
+    local -a remote_args=("$@")
+    local remote_target="${remote_args[0]}"
+
+    local -a remote_opts=()
+    if [ ${#remote_args[@]} -gt 1 ]; then
+        remote_opts=("${remote_args[@]:1}")
+    fi
+
+    local ssh_cmd="ssh"
+    if [ ${#remote_opts[@]} -gt 0 ]; then
+        ssh_cmd+=" ${remote_opts[*]}"
+    fi
+
+    local rsync_opts=(--mkpath)
+    if [ -n "$extra_opts" ]; then
+        rsync_opts+=("$extra_opts")
+    fi
+
+    if [ "$mode" = "push" ]; then
+        echo "Pushing local -> remote"
+        echo "From: $local_dir"
+        echo "To:   ${remote_target}:$remote_dir"
+    else
+        echo "Pulling remote -> local"
+        echo "From: ${remote_target}:$remote_dir"
+        echo "To:   $local_dir"
+    fi
+
+    local rsync_exit=1
+    if [ -z "$patterns_csv" ]; then
+        rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+            "$local_dir" "${remote_target}:$remote_dir"
+        rsync_exit=$?
+    else
+        local -a patterns=()
+        local IFS='|'
+        read -r -a patterns <<< "$patterns_csv"
+        IFS=$' \t\n'
+
+        local -a rsync_includes=()
+        local pattern
+        for pattern in "${patterns[@]}"; do
+            rsync_includes+=(--include="$pattern")
+        done
+
+        if [ "$mode" = "push" ]; then
+            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+                "${rsync_includes[@]}" \
+                --exclude='*' \
+                "$local_dir" "${remote_target}:$remote_dir"
+            rsync_exit=$?
+        else
+            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+                "${rsync_includes[@]}" \
+                --exclude='*' \
+                "${remote_target}:$remote_dir" "$local_dir"
+            rsync_exit=$?
+        fi
+    fi
+
+    if [ $rsync_exit -eq 0 ]; then
+        echo "Sync complete"
+        return 0
+    fi
+
+    echo "⚠️  rsync 同步失败，自动回退到 scp ..."
+    _remote_sync_scp_fallback "$mode" "$local_dir" "$remote_dir" "$remote_target" "$patterns_csv" "${remote_opts[@]}"
+    if [ $? -eq 0 ]; then
+        echo "✅ scp 回退同步完成"
+        return 0
+    fi
+    echo "❌ scp 回退同步失败"
+    return 1
+}
+
 _hf_sync() {
     if [ $# -lt 2 ]; then
-        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...] <model_name>"
-        echo "Example: ${FUNCNAME[1]} user@host -p 2022 Qwen/Qwen3-8B"
+        local func_name="${FUNCNAME[1]}"
+        echo "Usage: $func_name <ssh_target> [ssh_opts...] <model_name>"
+        echo "Example: $func_name user@host -p 2022 Qwen/Qwen3-8B"
         return 1
     fi
 
     local model="${@: -1}"
     local remote_args=("${@:1:$#-1}")
+    local mode
+    case "${FUNCNAME[1]}" in
+        hf_push) mode="push" ;;
+        hf_pull) mode="pull" ;;
+        *) echo "❌ Unknown function name"; return 1 ;;
+    esac
 
     local local_base="$HOME/.cache/huggingface/hub"
     local model_dir="models--${model//\//--}"
     local local_dir="$local_base/$model_dir/"
     local remote_dir="~/.cache/huggingface/hub/$model_dir/"
 
-    local ssh_cmd="ssh"
-    if [ ${#remote_args[@]} -gt 1 ]; then
-        ssh_cmd+=" ${remote_args[@]:1}"
-    fi
-
     echo "🔄 Syncing HuggingFace model cache: $model"
-
-    if [[ "${FUNCNAME[1]}" == "hf_push" ]]; then
-        echo "Pushing local -> remote"
-        echo "From: $local_dir"
-        echo "To:   ${remote_args[0]}:$remote_dir"
-        rsync -avzP --mkpath --links -e "$ssh_cmd" "$local_dir" "${remote_args[0]}:$remote_dir"
-    elif [[ "${FUNCNAME[1]}" == "hf_pull" ]]; then
-        echo "Pulling remote -> local"
-        echo "From: ${remote_args[0]}:$remote_dir"
-        echo "To:   $local_dir"
-        rsync -avzP --mkpath --links -e "$ssh_cmd" "${remote_args[0]}:$remote_dir" "$local_dir"
-    else
-        echo "❌ Unknown function name"
-        return 1
-    fi
-
-    if [ $? -eq 0 ]; then
-        echo "✅ Sync complete: $model"
-    else
-        echo "❌ Sync failed: $model"
-    fi
+    _remote_sync "$mode" "$local_dir" "$remote_dir" "" "hf" "--links" "${remote_args[@]}"
 }
 
 hf_push() { _hf_sync "$@"; }
@@ -394,44 +578,26 @@ alias hf-pull='hf_pull'
 
 _data_sync() {
     if [ $# -lt 2 ]; then
-        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...] <dir_name>"
-        echo "Example: ${FUNCNAME[1]} user@host -p 2022 data"
+        local func_name="${FUNCNAME[1]}"
+        echo "Usage: $func_name <ssh_target> [ssh_opts...] <dir_name>"
+        echo "Example: $func_name user@host -p 2022 data"
         return 1
     fi
 
     local dir="${@: -1}"
     local remote_args=("${@:1:$#-1}")
+    local mode
+    case "${FUNCNAME[1]}" in
+        data_push) mode="push" ;;
+        data_pull) mode="pull" ;;
+        *) echo "❌ Unknown function name"; return 1 ;;
+    esac
 
     local local_dir="$HOME/$dir"
     local remote_dir="~/$dir"
 
-    local ssh_cmd="ssh"
-    if [ ${#remote_args[@]} -gt 1 ]; then
-        ssh_cmd+=" ${remote_args[@]:1}"
-    fi
-
     echo "🔄 Syncing directory: $dir"
-
-    if [[ "${FUNCNAME[1]}" == "data_push" ]]; then
-        echo "Pushing local -> remote"
-        echo "From: $local_dir/"
-        echo "To:   ${remote_args[0]}:$remote_dir/"
-        rsync -avzP --mkpath --links -e "$ssh_cmd" "$local_dir/" "${remote_args[0]}:$remote_dir/"
-    elif [[ "${FUNCNAME[1]}" == "data_pull" ]]; then
-        echo "Pulling remote -> local"
-        echo "From: ${remote_args[0]}:$remote_dir/"
-        echo "To:   $local_dir/"
-        rsync -avzP --mkpath --links -e "$ssh_cmd" "${remote_args[0]}:$remote_dir/" "$local_dir/"
-    else
-        echo "❌ Unknown function name"
-        return 1
-    fi
-
-    if [ $? -eq 0 ]; then
-        echo "✅ Sync complete"
-    else
-        echo "❌ Sync failed"
-    fi
+    _remote_sync "$mode" "$local_dir/" "$remote_dir/" "" "data" "--links" "${remote_args[@]}"
 }
 
 # 对外接口
@@ -478,114 +644,24 @@ hf_list() {
 alias hf-list='hf_list'
 
 _claude_sync() {
-    if [ $# -lt 1 ]; then
-        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...]"
-        echo "Example: ${FUNCNAME[1]} user@host -p 2022"
-        return 1
-    fi
-
-    local remote_args=("$@")
-
-    local local_dir="$HOME/.claude/"
-    local remote_dir="~/.claude/"
-
-    local ssh_cmd="ssh"
-    if [ ${#remote_args[@]} -gt 1 ]; then
-        ssh_cmd+=" ${remote_args[@]:1}"
-    fi
-
-    echo "Syncing Claude settings: settings.json and settings.json.*"
-
-    if [[ "${FUNCNAME[1]}" == "claude_push" ]]; then
-        echo "Pushing local -> remote"
-        echo "From: $local_dir"
-        echo "To:   ${remote_args[0]}:$remote_dir"
-        rsync -avzP --mkpath -e "$ssh_cmd" \
-            --include='settings.json' \
-            --include='settings.json.*' \
-            --exclude='*' \
-            "$local_dir" "${remote_args[0]}:$remote_dir"
-    elif [[ "${FUNCNAME[1]}" == "claude_pull" ]]; then
-        echo "Pulling remote -> local"
-        echo "From: ${remote_args[0]}:$remote_dir"
-        echo "To:   $local_dir"
-        rsync -avzP --mkpath -e "$ssh_cmd" \
-            --include='settings.json' \
-            --include='settings.json.*' \
-            --exclude='*' \
-            "${remote_args[0]}:$remote_dir" "$local_dir"
-    else
-        echo "Unknown function name"
-        return 1
-    fi
-
-    if [ $? -eq 0 ]; then
-        echo "Sync complete"
-    else
-        echo "Sync failed"
-    fi
+    local sync_mode="$1"
+    shift
+    _remote_sync "$sync_mode" "$HOME/.claude/" "~/.claude/" "settings.json|settings.json.*" "claude" "" "$@"
 }
 
-claude_push() { _claude_sync "$@"; }
-claude_pull() { _claude_sync "$@"; }
+claude_push() { _claude_sync "push" "$@"; }
+claude_pull() { _claude_sync "pull" "$@"; }
 alias claude-push='claude_push'
 alias claude-pull='claude_pull'
 
 _codex_sync() {
-    if [ $# -lt 1 ]; then
-        echo "Usage: ${FUNCNAME[1]} <ssh_target> [ssh_opts...]"
-        echo "Example: ${FUNCNAME[1]} user@host -p 2022"
-        return 1
-    fi
-
-    local remote_args=("$@")
-
-    local local_dir="$HOME/.codex/"
-    local remote_dir="~/.codex/"
-
-    local ssh_cmd="ssh"
-    if [ ${#remote_args[@]} -gt 1 ]; then
-        ssh_cmd+=" ${remote_args[@]:1}"
-    fi
-
-    echo "Syncing Codex settings: config.toml and auth.json"
-
-    if [[ "${FUNCNAME[1]}" == "codex_push" ]]; then
-        echo "Pushing local -> remote"
-        echo "From: $local_dir"
-        echo "To:   ${remote_args[0]}:$remote_dir"
-        rsync -avzP --mkpath -e "$ssh_cmd" \
-            --include='config.toml' \
-            --include='config.toml.*' \
-            --include='auth.json' \
-            --include='auth.json.*' \
-            --exclude='*' \
-            "$local_dir" "${remote_args[0]}:$remote_dir"
-    elif [[ "${FUNCNAME[1]}" == "codex_pull" ]]; then
-        echo "Pulling remote -> local"
-        echo "From: ${remote_args[0]}:$remote_dir"
-        echo "To:   $local_dir"
-        rsync -avzP --mkpath -e "$ssh_cmd" \
-            --include='config.toml' \
-            --include='config.toml.*' \
-            --include='auth.json' \
-            --include='auth.json.*' \
-            --exclude='*' \
-            "${remote_args[0]}:$remote_dir" "$local_dir"
-    else
-        echo "Unknown function name"
-        return 1
-    fi
-
-    if [ $? -eq 0 ]; then
-        echo "Sync complete"
-    else
-        echo "Sync failed"
-    fi
+    local sync_mode="$1"
+    shift
+    _remote_sync "$sync_mode" "$HOME/.codex/" "~/.codex/" "config.toml|config.toml.*|auth.json|auth.json.*" "codex" "" "$@"
 }
 
-codex_push() { _codex_sync "$@"; }
-codex_pull() { _codex_sync "$@"; }
+codex_push() { _codex_sync "push" "$@"; }
+codex_pull() { _codex_sync "pull" "$@"; }
 alias codex-push='codex_push'
 alias codex-pull='codex_pull'
 
@@ -749,50 +825,83 @@ _docker_image_sync() {
     echo "✅ 远程环境检查通过"
 
     if [[ "$func_name" == "docker_push" ]]; then
-        _docker_push_impl "$ssh_target" "$ssh_opts" "$image" "$force"
+        _docker_image_sync_impl "push" "$ssh_target" "$ssh_opts" "$image" "$force"
     elif [[ "$func_name" == "docker_pull" ]]; then
-        _docker_pull_impl "$ssh_target" "$ssh_opts" "$image" "$force"
+        _docker_image_sync_impl "pull" "$ssh_target" "$ssh_opts" "$image" "$force"
     else
         echo "❌ 未知函数: $func_name"
         return 1
     fi
 }
 
-_docker_push_impl() {
-    local ssh_target="$1"
-    local ssh_opts="$2"
-    local image="$3"
-    local force="$4"
+_docker_image_sync_impl() {
+    local sync_direction="$1"
+    local ssh_target="$2"
+    local ssh_opts="$3"
+    local image="$4"
+    local force="$5"
     local ssh_cmd="ssh"
     [[ -n "$ssh_opts" ]] && ssh_cmd="ssh $ssh_opts"
 
-    echo ""
-    echo "📤 推送镜像: $image"
-    echo "   本地 → $ssh_target"
-    echo ""
+    if [[ "$sync_direction" == "push" ]]; then
+        echo ""
+        echo "📤 推送镜像: $image"
+        echo "   本地 → $ssh_target"
+        echo ""
 
-    # 检查本地镜像是否存在
-    if ! docker image inspect "$image" &>/dev/null; then
-        echo "❌ 错误: 本地不存在镜像 '$image'"
-        echo "   可用镜像:"
-        docker images --format "   - {{.Repository}}:{{.Tag}}" | head -10
+        # 检查本地镜像是否存在
+        if ! docker image inspect "$image" &>/dev/null; then
+            echo "❌ 错误: 本地不存在镜像 '$image'"
+            echo "   可用镜像:"
+            docker images --format "   - {{.Repository}}:{{.Tag}}" | head -10
+            return 1
+        fi
+
+        # 检查远程镜像是否存在
+        if $ssh_cmd "$ssh_target" "docker image inspect '$image'" &>/dev/null; then
+            if [[ "$force" != "true" ]]; then
+                echo "⚠️  警告: 远程已存在镜像 '$image'"
+                echo "   使用 --force 参数覆盖，或先在远程删除镜像"
+                return 1
+            else
+                echo "⚠️  远程已存在镜像，将覆盖 (--force)"
+            fi
+        fi
+
+        local image_size
+        image_size=$(docker image inspect "$image" --format '{{.Size}}' 2>/dev/null)
+    elif [[ "$sync_direction" == "pull" ]]; then
+        echo ""
+        echo "📥 拉取镜像: $image"
+        echo "   $ssh_target → 本地"
+        echo ""
+
+        # 检查远程镜像是否存在
+        if ! $ssh_cmd "$ssh_target" "docker image inspect '$image'" &>/dev/null; then
+            echo "❌ 错误: 远程不存在镜像 '$image'"
+            echo "   远程可用镜像:"
+            $ssh_cmd "$ssh_target" "docker images --format '   - {{.Repository}}:{{.Tag}}'" | head -10
+            return 1
+        fi
+
+        # 检查本地镜像是否存在
+        if docker image inspect "$image" &>/dev/null; then
+            if [[ "$force" != "true" ]]; then
+                echo "⚠️  警告: 本地已存在镜像 '$image'"
+                echo "   使用 --force 参数覆盖，或先删除本地镜像"
+                return 1
+            else
+                echo "⚠️  本地已存在镜像，将覆盖 (--force)"
+            fi
+        fi
+
+        local image_size
+        image_size=$($ssh_cmd "$ssh_target" "docker image inspect '$image' --format '{{.Size}}'" 2>/dev/null)
+    else
+        echo "❌ 未知方向: $sync_direction"
         return 1
     fi
 
-    # 检查远程镜像是否存在
-    if $ssh_cmd "$ssh_target" "docker image inspect '$image'" &>/dev/null; then
-        if [[ "$force" != "true" ]]; then
-            echo "⚠️  警告: 远程已存在镜像 '$image'"
-            echo "   使用 --force 参数覆盖，或先在远程删除镜像"
-            return 1
-        else
-            echo "⚠️  远程已存在镜像，将覆盖 (--force)"
-        fi
-    fi
-
-    # 获取镜像大小用于显示
-    local image_size
-    image_size=$(docker image inspect "$image" --format '{{.Size}}' 2>/dev/null)
     local image_size_human
     image_size_human=$(numfmt --to=iec-i --suffix=B "$image_size" 2>/dev/null || echo "unknown")
     echo "📦 镜像大小: $image_size_human"
@@ -803,20 +912,7 @@ _docker_push_impl() {
     local start_time
     start_time=$(date +%s)
 
-    # 使用 pv 显示进度；否则尝试 dd status=progress；再否则用 zstd --progress
-    if command -v pv &>/dev/null; then
-        docker save "$image" | zstd -T0 -3 | pv -N "传输中" -f | \
-            $ssh_cmd "$ssh_target" 'zstd -d -T0 | docker load'
-    elif command -v dd &>/dev/null && dd --help 2>&1 | grep -q "status"; then
-        echo "   (提示: 安装 pv 可显示更完整的进度条/ETA)"
-        docker save "$image" | zstd -T0 -3 | dd status=progress | \
-            $ssh_cmd "$ssh_target" 'zstd -d -T0 | docker load'
-    else
-        echo "   (提示: 安装 pv 可显示进度条)"
-        docker save "$image" | zstd -T0 -3 --progress | \
-            $ssh_cmd "$ssh_target" 'zstd -d -T0 | docker load'
-    fi
-
+    _docker_image_transfer_data "$sync_direction" "$ssh_target" "$ssh_opts" "$image"
     local ret=$?
     local end_time
     end_time=$(date +%s)
@@ -824,90 +920,62 @@ _docker_push_impl() {
 
     echo ""
     if [ $ret -eq 0 ]; then
-        echo "✅ 推送完成! 耗时: ${duration}s"
-        # 验证远程镜像
-        if $ssh_cmd "$ssh_target" "docker image inspect '$image'" &>/dev/null; then
-            echo "✅ 远程镜像验证成功"
+        if [[ "$sync_direction" == "push" ]]; then
+            echo "✅ 推送完成! 耗时: ${duration}s"
+            if $ssh_cmd "$ssh_target" "docker image inspect '$image'" &>/dev/null; then
+                echo "✅ 远程镜像验证成功"
+            fi
+        else
+            echo "✅ 拉取完成! 耗时: ${duration}s"
+            if docker image inspect "$image" &>/dev/null; then
+                echo "✅ 本地镜像验证成功"
+            fi
         fi
     else
-        echo "❌ 推送失败"
+        if [[ "$sync_direction" == "push" ]]; then
+            echo "❌ 推送失败"
+        else
+            echo "❌ 拉取失败"
+        fi
         return 1
     fi
 }
 
-_docker_pull_impl() {
-    local ssh_target="$1"
-    local ssh_opts="$2"
-    local image="$3"
-    local force="$4"
+_docker_image_transfer_data() {
+    local sync_direction="$1"
+    local ssh_target="$2"
+    local ssh_opts="$3"
+    local image="$4"
+
     local ssh_cmd="ssh"
     [[ -n "$ssh_opts" ]] && ssh_cmd="ssh $ssh_opts"
 
-    echo ""
-    echo "📥 拉取镜像: $image"
-    echo "   $ssh_target → 本地"
-    echo ""
-
-    # 检查远程镜像是否存在
-    if ! $ssh_cmd "$ssh_target" "docker image inspect '$image'" &>/dev/null; then
-        echo "❌ 错误: 远程不存在镜像 '$image'"
-        echo "   远程可用镜像:"
-        $ssh_cmd "$ssh_target" "docker images --format '   - {{.Repository}}:{{.Tag}}'" | head -10
-        return 1
-    fi
-
-    # 检查本地镜像是否存在
-    if docker image inspect "$image" &>/dev/null; then
-        if [[ "$force" != "true" ]]; then
-            echo "⚠️  警告: 本地已存在镜像 '$image'"
-            echo "   使用 --force 参数覆盖，或先删除本地镜像"
-            return 1
-        else
-            echo "⚠️  本地已存在镜像，将覆盖 (--force)"
-        fi
-    fi
-
-    # 获取远程镜像大小
-    local image_size
-    image_size=$($ssh_cmd "$ssh_target" "docker image inspect '$image' --format '{{.Size}}'" 2>/dev/null)
-    local image_size_human
-    image_size_human=$(numfmt --to=iec-i --suffix=B "$image_size" 2>/dev/null || echo "unknown")
-    echo "📦 镜像大小: $image_size_human"
-    echo ""
-
-    # 传输: ssh docker save | zstd | pv | zstd -d | docker load
-    echo "🚀 开始传输..."
-    local start_time
-    start_time=$(date +%s)
-
     if command -v pv &>/dev/null; then
-        $ssh_cmd "$ssh_target" "docker save '$image' | zstd -T0 -3" | \
-            pv -N "传输中" -f | zstd -d -T0 | docker load
+        if [[ "$sync_direction" == "push" ]]; then
+            docker save "$image" | zstd -T0 -3 | pv -N "传输中" -f | \
+                $ssh_cmd "$ssh_target" 'zstd -d -T0 | docker load'
+        else
+            $ssh_cmd "$ssh_target" "docker save '$image' | zstd -T0 -3" | \
+                pv -N "传输中" -f | zstd -d -T0 | docker load
+        fi
     elif command -v dd &>/dev/null && dd --help 2>&1 | grep -q "status"; then
         echo "   (提示: 安装 pv 可显示更完整的进度条/ETA)"
-        $ssh_cmd "$ssh_target" "docker save '$image' | zstd -T0 -3" | \
-            dd status=progress | zstd -d -T0 | docker load
-    else
-        echo "   (提示: 安装 pv 可显示进度条)"
-        $ssh_cmd "$ssh_target" "docker save '$image' | zstd -T0 -3 --progress" | \
-            zstd -d -T0 | docker load
-    fi
-
-    local ret=$?
-    local end_time
-    end_time=$(date +%s)
-    local duration=$((end_time - start_time))
-
-    echo ""
-    if [ $ret -eq 0 ]; then
-        echo "✅ 拉取完成! 耗时: ${duration}s"
-        # 验证本地镜像
-        if docker image inspect "$image" &>/dev/null; then
-            echo "✅ 本地镜像验证成功"
+        if [[ "$sync_direction" == "push" ]]; then
+            docker save "$image" | zstd -T0 -3 | dd status=progress | \
+                $ssh_cmd "$ssh_target" 'zstd -d -T0 | docker load'
+        else
+            $ssh_cmd "$ssh_target" "docker save '$image' | zstd -T0 -3" | \
+                dd status=progress | zstd -d -T0 | docker load
         fi
     else
-        echo "❌ 拉取失败"
-        return 1
+        echo "   (提示: 安装 pv 可显示进度条)"
+        if [[ "$sync_direction" == "push" ]]; then
+            docker save "$image" | zstd -T0 -3 --progress | \
+                $ssh_cmd "$ssh_target" 'zstd -d -T0 | docker load'
+        else
+            $ssh_cmd "$ssh_target" "docker save '$image' | zstd -T0 -3 --progress" | \
+                zstd -d -T0 | docker load
+        fi
     fi
 }
 
