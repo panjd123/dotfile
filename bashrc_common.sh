@@ -506,18 +506,26 @@ _remote_sync_scp_fallback() {
 
             for pattern in "${patterns[@]}"; do
                 local matched=0
-                for local_file in "$local_dir_clean/$pattern"; do
-                    if [ -f "$local_file" ]; then
-                        "${scp_cmd[@]}" "$local_file" "${remote_target}:${remote_dir_clean}/"
-                        if [ $? -ne 0 ]; then
-                            return 1
-                        fi
-                        has_source=1
-                        matched=1
+                local -a matched_files=()
+                while IFS= read -r -d '' local_file; do
+                    matched_files+=("$local_file")
+                done < <(find "$local_dir_clean" -maxdepth 1 -type f -name "$pattern" -print0)
+
+                if [ ${#matched_files[@]} -eq 0 ]; then
+                    echo "⚠️  跳过不存在的文件: $local_dir_clean/$pattern"
+                    continue
+                fi
+
+                for local_file in "${matched_files[@]}"; do
+                    "${scp_cmd[@]}" "$local_file" "${remote_target}:${remote_dir_clean}/"
+                    if [ $? -ne 0 ]; then
+                        return 1
                     fi
+                    has_source=1
+                    matched=1
                 done
                 if [ "$matched" -eq 0 ]; then
-                    echo "⚠️  跳过不存在的文件: $local_dir_clean/$pattern"
+                    echo "⚠️  未匹配到文件: $local_dir_clean/$pattern"
                 fi
             done
             if [ "$has_source" -eq 0 ]; then
