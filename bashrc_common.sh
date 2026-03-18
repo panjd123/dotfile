@@ -258,19 +258,19 @@ codex_switch() {
         cp "$src_auth" "$dst_auth"
 
         if [ "$has_src_config" = "1" ]; then
-            local backup_root="${HOME}/.codex/backups"
-            local backup_day_dir="${backup_root}/$(date +%F)"
-            local backup_file="${backup_day_dir}/config.toml.$(date +%F_%H%M%S)"
-            local merged_file
-            local tmp_projects
-            local tmp_model
-            local tmp_model_reasoning
-            merged_file="$(mktemp "${dst_config}.merged.XXXXXX")"
-            tmp_projects="$(mktemp "${dst_config}.projects.XXXXXX")"
-            tmp_model="$(mktemp "${dst_config}.model.XXXXXX")"
-            tmp_model_reasoning="$(mktemp "${dst_config}.reasoning.XXXXXX")"
-
             if [ -f "$dst_config" ]; then
+                local backup_root="${HOME}/.codex/backups"
+                local backup_day_dir="${backup_root}/$(date +%F)"
+                local backup_file="${backup_day_dir}/config.toml.$(date +%F_%H%M%S)"
+                local merged_file
+                local tmp_projects
+                local tmp_model
+                local tmp_model_reasoning
+                merged_file="$(mktemp "${dst_config}.merged.XXXXXX")"
+                tmp_projects="$(mktemp "${dst_config}.projects.XXXXXX")"
+                tmp_model="$(mktemp "${dst_config}.model.XXXXXX")"
+                tmp_model_reasoning="$(mktemp "${dst_config}.reasoning.XXXXXX")"
+
                 mkdir -p "$backup_day_dir"
                 cp "$dst_config" "$backup_file"
 
@@ -295,8 +295,6 @@ codex_switch() {
                         exit
                     }
                 ' "$dst_config" > "$tmp_model_reasoning"
-            fi
-
             python3 - "$src_config" "$merged_file" "$tmp_projects" "$tmp_model" "$tmp_model_reasoning" <<'PY'
 import sys
 from pathlib import Path
@@ -346,9 +344,15 @@ if reasoning_line:
 out_path.write_text(source_text)
 PY
 
-            mv "$merged_file" "$dst_config"
-            rm -f "$tmp_projects" "$tmp_model" "$tmp_model_reasoning"
-            echo "Switched to Codex profile: $1"
+                mv "$merged_file" "$dst_config"
+                rm -f "$tmp_projects" "$tmp_model" "$tmp_model_reasoning"
+            fi
+            if [ -f "$dst_config" ]; then
+                echo "Switched to Codex profile: $1"
+            else
+                cp "$src_config" "$dst_config"
+                echo "No local ~/.codex/config.toml was found, copied from profile: $1"
+            fi
         else
             echo "⚠️  No config.toml for profile $1, only auth.json has been switched."
             if [ -f "$dst_config" ]; then
