@@ -263,8 +263,8 @@ codex_switch() {
             cp "$dst_config" "$backup_file"
 
             awk '
-                /^\[projects\]$/ { in_projects=1; print; next }
-                in_projects && /^\[/ { in_projects=0 }
+                /^\[projects(\..*)?\][[:space:]]*$/ { in_projects=1; print; next }
+                in_projects && /^\[[^]]+\][[:space:]]*$/ { in_projects=0 }
                 in_projects { print }
             ' "$dst_config" > "$tmp_projects"
 
@@ -303,15 +303,12 @@ reasoning_line = reasoning_path.read_text().rstrip("\n")
 
 if projects_block:
     import re
-    source_without_projects = re.sub(
-        r'(?ms)^\[projects\]\s*\n.*?(?=^\[[^\]]+\]|\Z)',
+    source_text = re.sub(
+        r'(?ms)^\[projects(?:\.[^]]+)?\][ \t]*\n.*?(?=^\[[^]]+\]|\Z)',
         '',
-        source_text,
-        count=1
+        source_text
     )
-    if not source_without_projects.endswith('\n'):
-        source_without_projects += '\n'
-    source_text = f"{source_without_projects.rstrip(chr(10))}\n\n{projects_block}\n"
+    source_text = f"{source_text.rstrip(chr(10))}\n\n{projects_block}\n"
 
 if model_line:
     import re
