@@ -82,7 +82,9 @@ cargo install --locked zellij
 uv tool install nvidia-htop
 
 # claude
-npm install -g @anthropic-ai/claude-code
+curl -fsSL https://claude.ai/install.sh | bash
+irm https://claude.ai/install.ps1 | iex
+# npm install -g @anthropic-ai/claude-code
 # ~/.claude/settings.json
 # {"env": {"ANTHROPIC_BASE_URL": "xxx", "ANTHROPIC_AUTH_TOKEN": "xxx"}}
 
