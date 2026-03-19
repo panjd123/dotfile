@@ -785,10 +785,7 @@ alias claude-pull='claude_pull'
 _codex_sync() {
     local sync_mode="$1"
     shift
-    local patterns="auth.json|auth.json.*"
-    if [ "$sync_mode" = "pull" ]; then
-        patterns="config.toml|config.toml.*|auth.json|auth.json.*"
-    fi
+    local patterns="auth.json|auth.json.*|config.toml.*"
     _remote_sync "$sync_mode" "$HOME/.codex/" "~/.codex/" "$patterns" "codex" "" "$@"
 }
 
