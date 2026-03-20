@@ -5,6 +5,7 @@ REPO_URL="git@github.com:panjd123/dotfile.git"
 DOTFILES_DIR="$HOME/.dotfile"
 COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
 INSTALL_METHOD_FILE="$DOTFILES_DIR/.install_method"
+DOTFILE_NETWORK_REGION_FILE="$DOTFILES_DIR/.network_region"
 AUTHORIZED_KEYS_FILE="$HOME/.ssh/authorized_keys"
 SSHD_CONFIG_FILE="/etc/ssh/sshd_config"
 
@@ -29,6 +30,60 @@ DEFAULT_SSH_VALUES["PasswordAuthentication"]="yes"
 DEFAULT_SSH_VALUES["PermitRootLogin"]="prohibit-password" # 或 "yes" 取决于发行版，这里按常见默认值
 # 如果有其他需要监控的配置项，可在此添加
 
+dotfile_write_network_region() {
+  local region="${1:-UNKNOWN}"
+  mkdir -p "$DOTFILES_DIR"
+  printf '%s\n' "$region" > "$DOTFILE_NETWORK_REGION_FILE"
+}
+
+dotfile_detect_network_region() {
+  local country_code=""
+  local response=""
+  local url=""
+  local -a country_code_urls=(
+    "https://ipinfo.io/country"
+    "https://ifconfig.co/country-iso"
+    "https://ipapi.co/country/"
+  )
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "UNKNOWN"
+    return 0
+  fi
+
+  for url in "${country_code_urls[@]}"; do
+    response=$(curl -fsSL --connect-timeout 2 --max-time 5 "$url" 2>/dev/null || true)
+    country_code=$(printf '%s' "$response" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+    if [[ "$country_code" =~ ^[A-Z]{2}$ ]]; then
+      break
+    fi
+  done
+
+  if [[ ! "$country_code" =~ ^[A-Z]{2}$ ]]; then
+    response=$(curl -fsSL --connect-timeout 2 --max-time 5 "https://cip.cc" 2>/dev/null || true)
+    if printf '%s' "$response" | grep -Eiq '中国|china'; then
+      country_code="CN"
+    elif [ -n "$response" ]; then
+      country_code="NON_CN"
+    fi
+  fi
+
+  if [ "$country_code" = "CN" ]; then
+    echo "CN"
+  elif [[ "$country_code" =~ ^[A-Z]{2}$ ]] || [ "$country_code" = "NON_CN" ]; then
+    echo "OVERSEAS"
+  else
+    echo "UNKNOWN"
+  fi
+}
+
+dotfile_refresh_network_region() {
+  local region
+  region=$(dotfile_detect_network_region)
+  dotfile_write_network_region "$region"
+  echo "[dotfile] 当前网络区域: $region"
+}
+
 echo "[dotfile] 检查 dotfile 仓库..."
 
 # 克隆或更新
@@ -40,6 +95,8 @@ else
   echo "[dotfile] 更新已有仓库..."
   git -C "$DOTFILES_DIR" pull --quiet
 fi
+
+dotfile_refresh_network_region
 
 # 确保 bashrc 中加载
 if ! grep -q "source $COMMON_FILE" "$HOME/.bashrc"; then

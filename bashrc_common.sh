@@ -6,6 +6,103 @@
 
 DOTFILES_DIR="$HOME/.dotfile"
 COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
+DOTFILE_NETWORK_REGION_FILE="$DOTFILES_DIR/.network_region"
+DOTFILE_CN_PYPI_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+DOTFILE_CN_PYPI_HOST="mirrors.tuna.tsinghua.edu.cn"
+DOTFILE_CN_HF_ENDPOINT="https://hf-mirror.com"
+
+dotfile_read_network_region() {
+  if [ ! -f "$DOTFILE_NETWORK_REGION_FILE" ]; then
+    echo "UNKNOWN"
+    return 0
+  fi
+
+  head -n 1 "$DOTFILE_NETWORK_REGION_FILE" 2>/dev/null | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]'
+}
+
+dotfile_write_network_region() {
+  local region="${1:-UNKNOWN}"
+  mkdir -p "$DOTFILES_DIR"
+  printf '%s\n' "$region" > "$DOTFILE_NETWORK_REGION_FILE"
+}
+
+dotfile_detect_network_region() {
+  local country_code=""
+  local response=""
+  local url=""
+  local -a country_code_urls=(
+    "https://ipinfo.io/country"
+    "https://ifconfig.co/country-iso"
+    "https://ipapi.co/country/"
+  )
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "UNKNOWN"
+    return 0
+  fi
+
+  for url in "${country_code_urls[@]}"; do
+    response=$(curl -fsSL --connect-timeout 2 --max-time 5 "$url" 2>/dev/null || true)
+    country_code=$(printf '%s' "$response" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+    if [[ "$country_code" =~ ^[A-Z]{2}$ ]]; then
+      break
+    fi
+  done
+
+  if [[ ! "$country_code" =~ ^[A-Z]{2}$ ]]; then
+    response=$(curl -fsSL --connect-timeout 2 --max-time 5 "https://cip.cc" 2>/dev/null || true)
+    if printf '%s' "$response" | grep -Eiq '中国|china'; then
+      country_code="CN"
+    elif [ -n "$response" ]; then
+      country_code="NON_CN"
+    fi
+  fi
+
+  if [ "$country_code" = "CN" ]; then
+    echo "CN"
+  elif [[ "$country_code" =~ ^[A-Z]{2}$ ]] || [ "$country_code" = "NON_CN" ]; then
+    echo "OVERSEAS"
+  else
+    echo "UNKNOWN"
+  fi
+}
+
+dotfile_refresh_network_region() {
+  local region
+  region=$(dotfile_detect_network_region)
+  dotfile_write_network_region "$region"
+  echo "[dotfile] 当前网络区域: $region"
+}
+
+dotfile_apply_cn_network_settings() {
+  export UV_DEFAULT_INDEX="$DOTFILE_CN_PYPI_INDEX"
+  export PIP_INDEX_URL="$DOTFILE_CN_PYPI_INDEX"
+  export PIP_TRUSTED_HOST="$DOTFILE_CN_PYPI_HOST"
+  export HF_ENDPOINT="$DOTFILE_CN_HF_ENDPOINT"
+}
+
+dotfile_clear_cn_network_settings() {
+  if [ "${UV_DEFAULT_INDEX:-}" = "$DOTFILE_CN_PYPI_INDEX" ]; then
+    unset UV_DEFAULT_INDEX
+  fi
+  if [ "${PIP_INDEX_URL:-}" = "$DOTFILE_CN_PYPI_INDEX" ]; then
+    unset PIP_INDEX_URL
+  fi
+  if [ "${PIP_TRUSTED_HOST:-}" = "$DOTFILE_CN_PYPI_HOST" ]; then
+    unset PIP_TRUSTED_HOST
+  fi
+  if [ "${HF_ENDPOINT:-}" = "$DOTFILE_CN_HF_ENDPOINT" ]; then
+    unset HF_ENDPOINT
+  fi
+}
+
+dotfile_apply_region_network_settings() {
+  if [ "$(dotfile_read_network_region)" = "CN" ]; then
+    dotfile_apply_cn_network_settings
+  else
+    dotfile_clear_cn_network_settings
+  fi
+}
 
 # -------- 手动更新命令 --------
 update_dotfile() {
@@ -16,6 +113,12 @@ update_dotfile() {
     if [ -f "$COMMON_FILE" ]; then
       echo "[dotfile] 重新加载配置..."
       source "$COMMON_FILE"
+      if declare -F dotfile_refresh_network_region >/dev/null 2>&1; then
+        dotfile_refresh_network_region
+      fi
+      if declare -F dotfile_apply_region_network_settings >/dev/null 2>&1; then
+        dotfile_apply_region_network_settings
+      fi
       echo "[dotfile] 已重新加载 ✅"
     fi
   else
@@ -24,6 +127,12 @@ update_dotfile() {
     echo "[dotfile] 下载完成 ✅"
     echo "[dotfile] 重新加载配置..."
     source "$COMMON_FILE"
+    if declare -F dotfile_refresh_network_region >/dev/null 2>&1; then
+      dotfile_refresh_network_region
+    fi
+    if declare -F dotfile_apply_region_network_settings >/dev/null 2>&1; then
+      dotfile_apply_region_network_settings
+    fi
     echo "[dotfile] 已重新加载 ✅"
   fi
 }
@@ -824,10 +933,7 @@ alias vllm-bench='vllm_bench'
 alias ollamad='docker exec -it ollama ollama'
 alias vllamad='docker exec -it vllama vllama'
 
-export UV_DEFAULT_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
-export PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
-export PIP_TRUSTED_HOST="mirrors.tuna.tsinghua.edu.cn"
-export HF_ENDPOINT=https://hf-mirror.com
+dotfile_apply_region_network_settings
 # export HF_HUB_ENABLE_HF_TRANSFER=1
 
 proxy() {
