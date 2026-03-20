@@ -1,8 +1,8 @@
 # dotfile
 
-自用 .bashrc，集成了一些有趣/便捷的快捷指令
+自用 `bashrc` 速查笔记，包含常用 alias、函数和一些安装备忘。
 
-## How to install
+## Install
 
 ```bash
 # git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
@@ -10,22 +10,183 @@ git clone https://github.com/panjd123/dotfile.git $HOME/.dotfile
 bash ~/.dotfile/bashrc_common.sh install
 ```
 
+也可以直接使用单文件安装：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/panjd123/dotfile/master/bashrc_common.sh | bash -s -- install
 ```
 
-## Development
+安装流程会：
 
-源码在 `src/`，最终交付物仍然是仓库根目录的 `bashrc_common.sh`。
+- 刷新或下载 `bashrc_common.sh`
+- 自动把 `source ~/.dotfile/bashrc_common.sh` 写入 `~/.bashrc`
+- 自动探测当前网络区域并写入 `~/.dotfile/.network_region`
+- 仅在中国大陆网络下启用相关镜像配置
+- 按需提示更新 SSH 配置和 `authorized_keys`
+
+## Update
+
+安装完成后，日常更新直接执行：
 
 ```bash
-scripts/build_bashrc_common.sh
-git config core.hooksPath .githooks
+update_dotfile
+# 或
+update-dotfile
 ```
 
-`pre-commit` 会自动重建并暂存 `bashrc_common.sh`。
+## CLI
 
-## Useful Software Install Scripts
+`bashrc_common.sh` 本身也可以作为命令执行：
+
+```bash
+bash ~/.dotfile/bashrc_common.sh help
+bash ~/.dotfile/bashrc_common.sh install
+bash ~/.dotfile/bashrc_common.sh detect-region
+bash ~/.dotfile/bashrc_common.sh refresh-region
+```
+
+## Cheatsheet
+
+### Directory
+
+```bash
+..        # cd ..
+...       # cd ../..
+....      # cd ../../..
+mkcd foo  # mkdir -p foo && cd foo
+mcd foo   # mkcd 的别名
+bd        # 回到上一个目录
+```
+
+### Network
+
+```bash
+ports          # 查看监听端口
+ssh_info       # 查看 SSH 四元组
+ssh-info
+myip           # 查看出口 IP / 本机 IP / SSH 信息
+port 8080      # 查看某个端口对应进程
+proxy          # 设置内置 HTTP/HTTPS 代理环境变量
+check_proxy 10.77.110.128:20172 https://www.google.com
+proxy-test 10.77.110.128:20172
+```
+
+### Files
+
+```bash
+bak file.txt        # 生成 file.txt.bak 和带时间戳备份
+f keyword           # 全盘模糊 find
+extract a.tar.gz    # 自动识别压缩格式并解压
+untar a.tar
+gz dir
+ungz a.tar.gz
+backup-dir data
+restore-dir data.tar.zst
+```
+
+### Python / Models
+
+```bash
+a              # 激活当前目录下 .venv/bin/activate 或 bin/activate
+a path/to/dir
+va path/to/dir
+hf-download Qwen/Qwen3-8B
+hf-mirror-download Qwen/Qwen3-8B
+hf-list
+hf_bench Qwen/Qwen3-4B-Instruct-2507 4096 256 100
+vllm-bench Qwen/Qwen3-4B-Instruct-2507
+```
+
+### GPU
+
+```bash
+wnv
+wnvidia
+nvidia-htop
+wnvidia-htop
+```
+
+### Claude / Codex Profiles
+
+```bash
+claude profile_name
+cls profile_name
+claude-switch profile_name
+
+codex_switch profile_name
+cxs profile_name
+codex-switch profile_name
+```
+
+### Sync
+
+```bash
+hf_push user@host Qwen/Qwen3-8B
+hf_pull user@host Qwen/Qwen3-8B
+
+data_push user@host data
+data_pull user@host data
+
+claude-push user@host
+claude-pull user@host
+codex-push user@host
+codex-pull user@host
+```
+
+### Docker
+
+```bash
+dockerbash container_name
+dockerbash container_name "ls -la"
+
+docker_push user@host nginx:alpine
+docker_pull user@host nginx:alpine
+docker-push user@host nginx:alpine --force
+docker-pull user@host nginx:alpine --force
+
+ollamad list
+vllamad list
+```
+
+### Systemd
+
+```bash
+sup ssh
+sdown ssh
+sstatus ssh
+susta my-service
+suup my-service
+sudown my-service
+```
+
+### Misc
+
+```bash
+path
+pstat python
+aria2c-fast URL
+aria2c-large URL
+aptp install package_name
+```
+
+## Network-Dependent Behavior
+
+以下环境变量只会在探测结果为中国大陆网络时自动设置：
+
+```bash
+UV_DEFAULT_INDEX
+PIP_INDEX_URL
+PIP_TRUSTED_HOST
+HF_ENDPOINT
+```
+
+当前探测状态保存在：
+
+```bash
+~/.dotfile/.network_region
+```
+
+## Useful Software Install Notes
 
 ```bash
 # nvidia
@@ -104,7 +265,7 @@ npm install -g @openai/codex
 npm install -g @openai/codex-linux-x64@npm:@openai/codex@0.111.0-linux-x64
 ```
 
-## Ubuntu24.04 Chromium Lib
+## Ubuntu 24.04 Chromium Lib
 
 ```bash
 apt install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libcairo2 fonts-noto-cjk

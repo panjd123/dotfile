@@ -4,7 +4,10 @@
 # Do not edit it directly; edit files under src/ instead.
 
 
+# Development entrypoint. The build script expands the source lines below
+# into a single distributable bashrc_common.sh artifact.
 
+# Shared dotfile paths, URLs, and install-time defaults.
 DOTFILES_DIR="$HOME/.dotfile"
 COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
 DOTFILE_RAW_COMMON_URL="https://raw.githubusercontent.com/panjd123/dotfile/master/bashrc_common.sh"
@@ -30,7 +33,7 @@ DOTFILE_DEFAULT_SSH_VALUES["PermitRootLogin"]="prohibit-password"
 
 declare -a DOTFILE_INSTALL_PLAN_SSH_CONFIG=()
 declare -a DOTFILE_INSTALL_PLAN_SSH_KEYS=()
-
+# Region detection and region-gated mirror environment variables.
 dotfile_read_network_region() {
   if [ ! -f "$DOTFILE_NETWORK_REGION_FILE" ]; then
     echo "UNKNOWN"
@@ -61,6 +64,8 @@ dotfile_detect_network_region() {
     return 0
   fi
 
+  # Try lightweight country-code endpoints first, then fall back to a page that
+  # can still hint whether the machine is in mainland China.
   for url in "${country_code_urls[@]}"; do
     response=$(curl -fsSL --connect-timeout 2 --max-time 5 "$url" 2>/dev/null || true)
     country_code=$(printf '%s' "$response" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
@@ -123,7 +128,7 @@ dotfile_apply_region_network_settings() {
     dotfile_clear_cn_network_settings
   fi
 }
-
+# Fetch, reload, and register the generated single-file artifact.
 dotfile_download_common_file() {
   mkdir -p "$DOTFILES_DIR"
   curl -sSfL "$DOTFILE_RAW_COMMON_URL" -o "$COMMON_FILE"
@@ -135,6 +140,8 @@ dotfile_reload_common_file() {
   fi
 
   echo "[dotfile] 重新加载配置..."
+  # Reload from the generated single-file artifact so updates take effect in the
+  # current shell without requiring a new login shell.
   source "$COMMON_FILE"
   dotfile_refresh_network_region
   dotfile_apply_region_network_settings
@@ -149,7 +156,7 @@ dotfile_ensure_bashrc_source() {
     echo "[dotfile] ~/.bashrc 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
   fi
 }
-
+# SSH config/key planning and application used by the install flow.
 dotfile_install_reset_plan() {
   DOTFILE_INSTALL_PLAN_SSH_CONFIG=()
   DOTFILE_INSTALL_PLAN_SSH_KEYS=()
@@ -270,10 +277,11 @@ dotfile_apply_key_changes() {
     fi
   done
 }
-
+# End-user install command, usable from both repo checkouts and curl installs.
 dotfile_install() {
   echo "[dotfile] 检查 dotfile 仓库..."
 
+  # Install works in both "full repo checkout" and "curl single-file" modes.
   if [ ! -d "$DOTFILES_DIR/.git" ]; then
     echo "[dotfile] 使用直接下载方式获取 bashrc_common.sh ..."
     if ! dotfile_download_common_file; then
@@ -351,7 +359,7 @@ dotfile_install() {
 
   echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
 }
-
+# CLI subcommands exposed when bashrc_common.sh is executed instead of sourced.
 dotfile_cli_usage() {
   cat <<'EOF'
 Usage:
@@ -390,6 +398,8 @@ dotfile_cli() {
 dotfile_cli_dispatch_if_executed() {
   local source0="${BASH_SOURCE[0]-}"
 
+  # `source file.sh` keeps BASH_SOURCE[0] as the file path, while `bash -s --`
+  # reports `main`. We only dispatch for true execution paths.
   if [ -n "$source0" ] && [ "$source0" != "$0" ] && [ "$source0" != "main" ]; then
     return 0
   fi
@@ -397,7 +407,7 @@ dotfile_cli_dispatch_if_executed() {
   dotfile_cli "$@"
   exit $?
 }
-
+# Manual update entrypoint available after the file has been sourced.
 # -------- 手动更新命令 --------
 update_dotfile() {
   echo "[dotfile] 正在更新..."
@@ -420,6 +430,8 @@ update_dotfile() {
 }
 alias update_dotfile='update_dotfile'
 alias update-dotfile='update_dotfile'
+
+# Directory movement helpers.
 # 目录相关
 alias ..='cd ..'
 alias ...='cd ../..'
@@ -428,6 +440,7 @@ mkcd() { mkdir -p "$1" && cd "$1"; }
 alias mcd='mkcd'
 alias bd='cd "$OLDPWD"'
 
+# Local port and SSH/network inspection helpers.
 # 网络相关
 alias ports='netstat -tulnp | grep LISTEN'
 
@@ -502,13 +515,135 @@ getip() {
   ssh_info || echo "非SSH连接"
 }
 alias myip='getip'
+# Apply region-gated mirrors and define opt-in proxy environment helpers.
+dotfile_apply_region_network_settings
+# export HF_HUB_ENABLE_HF_TRANSFER=1
 
-# GPU 监控
-alias wnv='watch -n 1 nvidia-smi'
-alias wnvidia='watch -n 1 nvidia-smi'
-alias nvidia-htop='nvidia-htop.py -l -c -m'
-alias wnvidia-htop='watch -n 1 nvidia-htop.py -l -c -m'
+proxy() {
+  export http_proxy="http://10.77.110.128:20172"
+  export https_proxy=$http_proxy
+  export no_proxy="localhost,127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+  export HTTP_PROXY=$http_proxy
+  export HTTPS_PROXY=$http_proxy
+  export NO_PROXY=$no_proxy
+}
 
+alias aptp='sudo apt -o Acquire::http::Proxy="$http_proxy" -o Acquire::https::Proxy="$http_proxy"'
+# Probe an HTTP proxy from ICMP reachability down to application-layer latency.
+function check_proxy() {
+    # 1. 解析输入
+    local INPUT=${1:-"10.77.110.128:20172"}
+    local TARGET_URL="${2:-"https://www.google.com"}"
+    if [[ -z "$INPUT" ]]; then
+        echo "❌ 用法: check_proxy IP:PORT [TARGET_URL]"
+        echo "   示例: check_proxy 10.77.110.128:20172 https://www.google.com"
+        return 1
+    fi
+    
+    local IP=${INPUT%:*}
+    local PORT=${INPUT#*:}
+    # 定义颜色
+    local GREEN='\033[0;32m'
+    local RED='\033[0;31m'
+    local YELLOW='\033[1;33m'
+    local NC='\033[0m' # No Color
+
+    echo "------------------------------------------------"
+    echo -e "🔍 开始测试代理: ${YELLOW}${INPUT}${NC}"
+    echo -e "🎯 目标 URL: ${YELLOW}${TARGET_URL}${NC}"
+    echo "------------------------------------------------"
+
+    # --- 阶段 1: IP 连通性测试 (Ping) ---
+    echo -n "1. [网络层] Ping IP ($IP)... "
+    # 检测系统是 Linux 还是 Mac (Darwin) 来调整 ping 参数
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        ping -c 2 -W 1000 "$IP" > /dev/null 2>&1
+    else
+        ping -c 2 -W 1 "$IP" > /dev/null 2>&1
+    fi
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}通 (Pass)${NC}"
+    else
+        echo -e "${RED}不通 (Fail)${NC} -> 可能被禁 Ping 或 IP 不存在"
+        # 注意：Ping 不通不代表代理不能用，继续往下测
+    fi
+
+    # --- 阶段 2: 端口开放性测试 (自动回退) ---
+    echo -n "2. [传输层] 端口连通性 ($PORT)... "
+    local PORT_OPEN=0
+    
+    # 策略 A: 使用 netcat (nc)
+    if command -v nc >/dev/null 2>&1; then
+        if nc -z -w 2 "$IP" "$PORT" >/dev/null 2>&1; then
+            PORT_OPEN=1
+        fi
+    # 策略 B: 使用 bash 原生 /dev/tcp (如果 nc 不存在)
+    else
+        # timeout 命令防止卡死，如果没有 timeout 命令，风险较高但也能跑
+        if timeout 2 bash -c "</dev/tcp/$IP/$PORT" >/dev/null 2>&1; then
+             PORT_OPEN=1
+        fi
+    fi
+
+    if [ $PORT_OPEN -eq 1 ]; then
+        echo -e "${GREEN}打开 (Open)${NC}"
+    else
+        echo -e "${RED}关闭或拦截 (Closed/Blocked)${NC}"
+        echo "   ⛔ 端口不通，停止后续代理测试。"
+        return 1
+    fi
+
+    # --- 阶段 3: 代理功能与延迟测试 (自动回退) ---
+    echo -n "3. [应用层] 代理握手与延迟... "
+    
+    # 策略 A: 优先使用 curl (能提供精确的时间分析)
+    if command -v curl >/dev/null 2>&1; then
+        echo -e "\n   👉 使用 Curl 引擎测试..."
+        # 结果捕获
+        RESULT=$(curl -o /dev/null -s -w "%{http_code}:%{time_connect}:%{time_total}" --connect-timeout 5 -x "http://$IP:$PORT" "$TARGET_URL")
+        
+        local HTTP_CODE=$(echo "$RESULT" | cut -d':' -f1)
+        local TIME_CONN=$(echo "$RESULT" | cut -d':' -f2)
+        local TIME_TOTAL=$(echo "$RESULT" | cut -d':' -f3)
+
+        if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "301" ] || [ "$HTTP_CODE" == "302" ]; then
+             echo -e "   状态: ${GREEN}正常 (HTTP $HTTP_CODE)${NC}"
+             echo -e "   连接耗时: ${GREEN}${TIME_CONN}s${NC}"
+             echo -e "   总延迟:   ${GREEN}${TIME_TOTAL}s${NC}"
+        else
+             echo -e "   状态: ${RED}失败 (HTTP $HTTP_CODE)${NC} - 代理可能无法连接外网"
+        fi
+
+    # 策略 B: 回退使用 wget (如果没有 curl)
+    elif command -v wget >/dev/null 2>&1; then
+        echo -e "\n   👉 (Curl缺失) 回退使用 Wget + Time 测试..."
+        export http_proxy="http://$IP:$PORT"
+        export https_proxy="http://$IP:$PORT"
+        
+        # 使用 time 指令来计算耗时
+        # time 的输出格式在不同 shell 下不同，这里直接显示 time 的输出给用户看
+        if wget --spider --timeout=5 --tries=1 "$TARGET_URL" >/dev/null 2>&1; then
+             echo -e "   状态: ${GREEN}正常 (连接成功)${NC}"
+             echo "   (由于没有curl，无法精确分层耗时，请参考下方 time 输出)"
+        else
+             echo -e "   状态: ${RED}失败${NC}"
+        fi
+        
+        # 清理环境变量
+        unset http_proxy https_proxy
+
+    else
+        echo -e "${RED}失败${NC}"
+        echo "   ❌ 系统既没有 curl 也没有 wget，无法测试 HTTP 代理。"
+    fi
+    echo "------------------------------------------------"
+}
+alias check-proxy='check_proxy'
+alias proxy-test='check_proxy'
+alias proxy_test='check_proxy'
+
+# File backup, search, and archive extraction helpers.
 # 文件相关
 bak() {
   if [ -z "$1" ]; then
@@ -575,8 +710,31 @@ extract() {
       return 1 ;;
   esac
 }
+# Directory backup and restore helpers based on tar + zstd.
+backup_dir () {
+    local dir="${1%/}"
+    local level="${2:-6}"   # 默认压缩等级 6
+    local out="${dir##*/}.tar.zst"  # 自动生成压缩包名
 
+    tar --xattrs --acls --selinux --numeric-owner -cf - "$dir" \
+        | zstd -T0 -$level --progress -o "$out"
+}
 
+restore_dir () {
+    local file="$1"
+    tar --xattrs --acls --selinux -I "zstd --progress" -xf "$file"
+}
+alias backup-dir='backup_dir'
+alias restore-dir='restore_dir'
+
+# Quick GPU monitoring aliases.
+# GPU 监控
+alias wnv='watch -n 1 nvidia-smi'
+alias wnvidia='watch -n 1 nvidia-smi'
+alias nvidia-htop='nvidia-htop.py -l -c -m'
+alias wnvidia-htop='watch -n 1 nvidia-htop.py -l -c -m'
+
+# Python virtual environment activation shortcuts.
 a() {
     local base="."
     if [ $# -gt 0 ]; then
@@ -605,7 +763,7 @@ a() {
 alias va=a
 
 alias da=deactivate
-
+# Simple Hugging Face download wrappers.
 hf_mirror_download() {
   HF_ENDPOINT=https://hf-mirror.com python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$1')"
 }
@@ -614,6 +772,35 @@ hf_download() {
  python3 -c "from huggingface_hub import snapshot_download; snapshot_download('$1')"
 }
 alias hf-download='hf_download'
+# vLLM throughput benchmark wrapper.
+vllm_bench() {
+  model=${1:-"Qwen/Qwen3-4B-Instruct-2507"}
+  input_len=${2:-4096}
+  output_len=${3:-256}
+  num_prompts=${4:-100}
+
+  # default max_model_len = input_len + output_len
+  if [ -n "$5" ]; then
+    max_model_len=$5
+  else
+    max_model_len=$((input_len + output_len))
+  fi
+
+  vllm bench throughput \
+    --gpu-memory-utilization 0.9 \
+    --model "$model" \
+    --dataset-name random \
+    --num-prompts "$num_prompts" \
+    --input-len "$input_len" \
+    --output-len "$output_len" \
+    --max-model-len "$max_model_len" \
+    --async-engine
+}
+
+alias hf_bench='vllm_bench'
+alias vllm-bench='vllm_bench'
+
+# Claude CLI aliases and profile switching.
 alias claude='CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 IS_SANDBOX=1 claude --dangerously-skip-permissions'
 alias codex='codex --dangerously-bypass-approvals-and-sandbox'
 claude_switch() {
@@ -629,6 +816,7 @@ claude_switch() {
 }
 alias cls='claude_switch'
 alias claude-switch='claude_switch'
+# Codex CLI aliases and profile switching.
 codex_switch() {
     # if exist ~/.codex/auth.json.$1, copy auth.json.
     # if exist ~/.codex/config.toml.$1, merge protected fields into ~/.codex/config.toml as well.
@@ -764,6 +952,8 @@ PY
 }
 alias cxs='codex_switch'
 alias codex-switch='codex_switch'
+
+# Systemd shortcuts plus completion remapping for the custom aliases.
 # systemctl 相关
 alias sup='systemctl start'
 alias sdown='systemctl stop'
@@ -821,409 +1011,12 @@ _systemctl_alias_completion() {
 complete -F _systemctl_alias_completion \
     sup sdown sstatus ssta \
     su suup sudown sustatus susta
-
+# PATH inspection shortcut.
 alias path='echo -e ${PATH//:/\\n}'
-
-# docker 相关
-dockerbash() {
-  # 检查是否提供了至少一个参数（容器名）
-  if [ -z "$1" ]; then
-    echo "用法: dockerbash <容器ID或名称> [要在容器中执行的命令...]"
-    return 1
-  fi
-
-  # 将第一个参数（容器名）保存到一个变量中，以便后续使用
-  local container_id="$1"
-
-  # 检查参数总数是否大于1。
-  # 如果参数总数大于1，意味着除了容器名，还提供了要执行的命令。
-  if [ "$#" -gt 1 ]; then
-    # “shift”命令会移除第一个参数（$1），
-    # 剩下的所有参数（$@）就正好是我们要执行的命令。
-    shift
-    docker exec "$container_id" /bin/bash -c "$@"
-  else
-    # 如果参数总数只有1，就执行默认行为：启动一个交互式的bash shell。
-    docker exec -it "$container_id" /bin/bash
-  fi
-}
-
+# Pre-tuned aria2 download presets.
 alias aria2c-fast='aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true'
 alias aria2c-large='aria2c --max-connection-per-server=16 --split=16 --min-split-size=20M --continue=true'
-_remote_sync_scp_fallback() {
-    local mode="$1"
-    local local_dir="$2"
-    local remote_dir="$3"
-    local remote_target="$4"
-    local patterns_csv="$5"
-    shift 5
-    local remote_opts=("$@")
-
-    local local_dir_clean="${local_dir%/}"
-    local remote_dir_clean="${remote_dir%/}"
-
-    local -a scp_cmd=(scp -r)
-    if [ ${#remote_opts[@]} -gt 0 ]; then
-        scp_cmd+=("${remote_opts[@]}")
-    fi
-
-    local -a ssh_cmd=(ssh)
-    if [ ${#remote_opts[@]} -gt 0 ]; then
-        ssh_cmd+=("${remote_opts[@]}")
-    fi
-
-    case "$mode" in
-        push)
-            "${ssh_cmd[@]}" "$remote_target" "mkdir -p $remote_dir_clean"
-            if [ $? -ne 0 ]; then
-                return 1
-            fi
-            if [ -z "$patterns_csv" ]; then
-                "${scp_cmd[@]}" "$local_dir_clean/." "${remote_target}:${remote_dir_clean}/"
-                return $?
-            fi
-
-            local IFS='|'
-            local -a patterns=()
-            local pattern
-            local local_file
-            local has_source=0
-            read -r -a patterns <<< "$patterns_csv"
-            IFS=$' \t\n'
-
-            for pattern in "${patterns[@]}"; do
-                local matched=0
-                local -a matched_files=()
-                while IFS= read -r -d '' local_file; do
-                    matched_files+=("$local_file")
-                done < <(find "$local_dir_clean" -maxdepth 1 -type f -name "$pattern" -print0)
-
-                if [ ${#matched_files[@]} -eq 0 ]; then
-                    echo "⚠️  跳过不存在的文件: $local_dir_clean/$pattern"
-                    continue
-                fi
-
-                for local_file in "${matched_files[@]}"; do
-                    "${scp_cmd[@]}" "$local_file" "${remote_target}:${remote_dir_clean}/"
-                    if [ $? -ne 0 ]; then
-                        return 1
-                    fi
-                    has_source=1
-                    matched=1
-                done
-                if [ "$matched" -eq 0 ]; then
-                    echo "⚠️  未匹配到文件: $local_dir_clean/$pattern"
-                fi
-            done
-            if [ "$has_source" -eq 0 ]; then
-                echo "⚠️  未发现可同步文件，已按无变更处理"
-            fi
-            ;;
-        pull)
-            mkdir -p "$local_dir_clean"
-            if [ -z "$patterns_csv" ]; then
-                "${scp_cmd[@]}" "${remote_target}:${remote_dir_clean}/." "$local_dir_clean/"
-                return $?
-            fi
-
-            local IFS='|'
-            local -a patterns=()
-            local pattern
-            local remote_files
-            local found_any=0
-            read -r -a patterns <<< "$patterns_csv"
-            IFS=$' \t\n'
-
-            for pattern in "${patterns[@]}"; do
-                remote_files=$("${ssh_cmd[@]}" "$remote_target" \
-                    "for f in ${remote_dir_clean}/${pattern}; do
-                        [ -e \"$f\" ] && printf '%s\n' \"$f\";
-                    done")
-                if [ -z "$remote_files" ]; then
-                    echo "⚠️  未找到远程文件: ${remote_dir_clean}/${pattern}"
-                    continue
-                fi
-
-                while IFS= read -r remote_file; do
-                    [ -z "$remote_file" ] && continue
-                    "${scp_cmd[@]}" "${remote_target}:${remote_file}" "$local_dir_clean/"
-                    if [ $? -ne 0 ]; then
-                        return 1
-                    fi
-                    found_any=1
-                done <<< "$remote_files"
-            done
-            if [ "$found_any" -eq 0 ]; then
-                echo "⚠️  未找到可同步文件，已按无变更处理"
-            fi
-            ;;
-        *)
-            echo "Unknown sync mode: $mode"
-            return 1
-            ;;
-    esac
-    return 0
-}
-
-_remote_sync() {
-    local mode="$1"
-    local local_dir="$2"
-    local remote_dir="$3"
-    local patterns_csv="$4"
-    local sync_label="$5"
-    local extra_opts="$6"
-    shift 6
-
-    if [ "$mode" != "push" ] && [ "$mode" != "pull" ]; then
-        echo "Unknown sync mode: $mode"
-        return 1
-    fi
-
-    if [ $# -lt 1 ]; then
-        echo "Usage: ${sync_label}_${mode} <ssh_target> [ssh_opts...]"
-        echo "Example: ${sync_label}_${mode} user@host -p 2022"
-        return 1
-    fi
-
-    local -a remote_args=("$@")
-    local remote_target="${remote_args[0]}"
-
-    local -a remote_opts=()
-    if [ ${#remote_args[@]} -gt 1 ]; then
-        remote_opts=("${remote_args[@]:1}")
-    fi
-
-    local ssh_cmd="ssh"
-    if [ ${#remote_opts[@]} -gt 0 ]; then
-        ssh_cmd+=" ${remote_opts[*]}"
-    fi
-
-    local rsync_opts=(--mkpath)
-    if [ -n "$extra_opts" ]; then
-        rsync_opts+=("$extra_opts")
-    fi
-
-    if [ "$mode" = "push" ]; then
-        echo "Pushing local -> remote"
-        echo "From: $local_dir"
-        echo "To:   ${remote_target}:$remote_dir"
-    else
-        echo "Pulling remote -> local"
-        echo "From: ${remote_target}:$remote_dir"
-        echo "To:   $local_dir"
-    fi
-
-    local rsync_exit=1
-    if [ -z "$patterns_csv" ]; then
-        rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
-            "$local_dir" "${remote_target}:$remote_dir"
-        rsync_exit=$?
-    else
-        local -a patterns=()
-        local IFS='|'
-        read -r -a patterns <<< "$patterns_csv"
-        IFS=$' \t\n'
-
-        local -a rsync_includes=()
-        local pattern
-        for pattern in "${patterns[@]}"; do
-            rsync_includes+=(--include="$pattern")
-        done
-
-        if [ "$mode" = "push" ]; then
-            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
-                "${rsync_includes[@]}" \
-                --exclude='*' \
-                "$local_dir" "${remote_target}:$remote_dir"
-            rsync_exit=$?
-        else
-            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
-                "${rsync_includes[@]}" \
-                --exclude='*' \
-                "${remote_target}:$remote_dir" "$local_dir"
-            rsync_exit=$?
-        fi
-    fi
-
-    if [ $rsync_exit -eq 0 ]; then
-        echo "Sync complete"
-        return 0
-    fi
-
-    echo "⚠️  rsync 同步失败，自动回退到 scp ..."
-    _remote_sync_scp_fallback "$mode" "$local_dir" "$remote_dir" "$remote_target" "$patterns_csv" "${remote_opts[@]}"
-    if [ $? -eq 0 ]; then
-        echo "✅ scp 回退同步完成"
-        return 0
-    fi
-    echo "❌ scp 回退同步失败"
-    return 1
-}
-
-_hf_sync() {
-    if [ $# -lt 2 ]; then
-        local func_name="${FUNCNAME[1]}"
-        echo "Usage: $func_name <ssh_target> [ssh_opts...] <model_name>"
-        echo "Example: $func_name user@host -p 2022 Qwen/Qwen3-8B"
-        return 1
-    fi
-
-    local model="${@: -1}"
-    local remote_args=("${@:1:$#-1}")
-    local mode
-    case "${FUNCNAME[1]}" in
-        hf_push) mode="push" ;;
-        hf_pull) mode="pull" ;;
-        *) echo "❌ Unknown function name"; return 1 ;;
-    esac
-
-    local local_base="$HOME/.cache/huggingface/hub"
-    local model_dir="models--${model//\//--}"
-    local local_dir="$local_base/$model_dir/"
-    local remote_dir="~/.cache/huggingface/hub/$model_dir/"
-
-    echo "🔄 Syncing HuggingFace model cache: $model"
-    _remote_sync "$mode" "$local_dir" "$remote_dir" "" "hf" "--links" "${remote_args[@]}"
-}
-
-hf_push() { _hf_sync "$@"; }
-hf_pull() { _hf_sync "$@"; }
-alias hf-push='hf_push'
-alias hf-pull='hf_pull'
-
-_data_sync() {
-    if [ $# -lt 2 ]; then
-        local func_name="${FUNCNAME[1]}"
-        echo "Usage: $func_name <ssh_target> [ssh_opts...] <dir_name>"
-        echo "Example: $func_name user@host -p 2022 data"
-        return 1
-    fi
-
-    local dir="${@: -1}"
-    local remote_args=("${@:1:$#-1}")
-    local mode
-    case "${FUNCNAME[1]}" in
-        data_push) mode="push" ;;
-        data_pull) mode="pull" ;;
-        *) echo "❌ Unknown function name"; return 1 ;;
-    esac
-
-    local local_dir="$HOME/$dir"
-    local remote_dir="~/$dir"
-
-    echo "🔄 Syncing directory: $dir"
-    _remote_sync "$mode" "$local_dir/" "$remote_dir/" "" "data" "--links" "${remote_args[@]}"
-}
-
-# 对外接口
-data_push() { _data_sync "$@"; }
-data_pull() { _data_sync "$@"; }
-alias data-push='data_push'
-alias data-pull='data_pull'
-
-hf_list() {
-    local CACHE_DIR="${HF_HOME:-$HOME/.cache}/huggingface/hub"
-
-    if [ ! -d "$CACHE_DIR" ]; then
-        echo "Cache directory does not exist: $CACHE_DIR"
-        return 1
-    fi
-
-    declare -A grouped_models
-
-    # 遍历所有模型目录
-    for dir in "$CACHE_DIR"/models--*/; do
-        local model_dir
-        model_dir=$(basename "$dir")
-        # 去掉 models-- 前缀
-        local model_name="${model_dir//models--/}"
-        # 将 -- 替换为 /，得到 user/model-name
-        model_name="${model_name//--//}"
-        # 取前缀作为分组 key
-        local prefix="${model_name%%/*}"
-        grouped_models["$prefix"]+="$model_name"$'\n'
-    done
-
-    echo "Models in Hugging Face cache (grouped by prefix):"
-    echo "-------------------------------------------------"
-
-    # 输出分组，前缀排序
-    for prefix in $(printf "%s\n" "${!grouped_models[@]}" | sort); do
-        echo "$prefix:"
-        while IFS= read -r model; do
-            [ -z "$model" ] && continue
-            echo "  - $model"
-        done <<< "$(printf "%s" "${grouped_models[$prefix]}" | sort)"
-    done
-}
-alias hf-list='hf_list'
-
-_claude_sync() {
-    local sync_mode="$1"
-    shift
-    _remote_sync "$sync_mode" "$HOME/.claude/" "~/.claude/" "settings.json|settings.json.*" "claude" "" "$@"
-}
-
-claude_push() { _claude_sync "push" "$@"; }
-claude_pull() { _claude_sync "pull" "$@"; }
-alias claude-push='claude_push'
-alias claude-pull='claude_pull'
-
-_codex_sync() {
-    local sync_mode="$1"
-    shift
-    local patterns="auth.json|auth.json.*|config.toml.*"
-    _remote_sync "$sync_mode" "$HOME/.codex/" "~/.codex/" "$patterns" "codex" "" "$@"
-}
-
-codex_push() { _codex_sync "push" "$@"; }
-codex_pull() { _codex_sync "pull" "$@"; }
-alias codex-push='codex_push'
-alias codex-pull='codex_pull'
-vllm_bench() {
-  model=${1:-"Qwen/Qwen3-4B-Instruct-2507"}
-  input_len=${2:-4096}
-  output_len=${3:-256}
-  num_prompts=${4:-100}
-
-  # default max_model_len = input_len + output_len
-  if [ -n "$5" ]; then
-    max_model_len=$5
-  else
-    max_model_len=$((input_len + output_len))
-  fi
-
-  vllm bench throughput \
-    --gpu-memory-utilization 0.9 \
-    --model "$model" \
-    --dataset-name random \
-    --num-prompts "$num_prompts" \
-    --input-len "$input_len" \
-    --output-len "$output_len" \
-    --max-model-len "$max_model_len" \
-    --async-engine
-}
-
-alias hf_bench='vllm_bench'
-alias vllm-bench='vllm_bench'
-
-alias ollamad='docker exec -it ollama ollama'
-alias vllamad='docker exec -it vllama vllama'
-
-dotfile_apply_region_network_settings
-# export HF_HUB_ENABLE_HF_TRANSFER=1
-
-proxy() {
-  export http_proxy="http://10.77.110.128:20172"
-  export https_proxy=$http_proxy
-  export no_proxy="localhost,127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
-  export HTTP_PROXY=$http_proxy
-  export HTTPS_PROXY=$http_proxy
-  export NO_PROXY=$no_proxy
-}
-
-alias aptp='sudo apt -o Acquire::http::Proxy="$http_proxy" -o Acquire::https::Proxy="$http_proxy"'
-
+# Aggregate process stats for commands matching a keyword.
 pstat() {
     if [ -z "$1" ]; then
         echo "Usage: pstat <keyword>"
@@ -1251,22 +1044,34 @@ pstat() {
     echo "Total RSS : $rss_sum MB"
 }
 
-backup_dir () {
-    local dir="${1%/}"
-    local level="${2:-6}"   # 默认压缩等级 6
-    local out="${dir##*/}.tar.zst"  # 自动生成压缩包名
+# Run an interactive shell or one-off command inside a container.
+# docker 相关
+dockerbash() {
+  # 检查是否提供了至少一个参数（容器名）
+  if [ -z "$1" ]; then
+    echo "用法: dockerbash <容器ID或名称> [要在容器中执行的命令...]"
+    return 1
+  fi
 
-    tar --xattrs --acls --selinux --numeric-owner -cf - "$dir" \
-        | zstd -T0 -$level --progress -o "$out"
+  # 将第一个参数（容器名）保存到一个变量中，以便后续使用
+  local container_id="$1"
+
+  # 检查参数总数是否大于1。
+  # 如果参数总数大于1，意味着除了容器名，还提供了要执行的命令。
+  if [ "$#" -gt 1 ]; then
+    # “shift”命令会移除第一个参数（$1），
+    # 剩下的所有参数（$@）就正好是我们要执行的命令。
+    shift
+    docker exec "$container_id" /bin/bash -c "$@"
+  else
+    # 如果参数总数只有1，就执行默认行为：启动一个交互式的bash shell。
+    docker exec -it "$container_id" /bin/bash
+  fi
 }
-
-restore_dir () {
-    local file="$1"
-    tar --xattrs --acls --selinux -I "zstd --progress" -xf "$file"
-}
-alias backup-dir='backup_dir'
-alias restore-dir='restore_dir'
-
+# Short aliases for containerized local model runtimes.
+alias ollamad='docker exec -it ollama ollama'
+alias vllamad='docker exec -it vllama vllama'
+# Stream Docker images over SSH without writing intermediate tarballs to disk.
 # ========== Docker 镜像传输函数 ==========
 # 使用方法: docker_push <ssh_target> [ssh_opts...] <image_name> [--force]
 #           docker_pull <ssh_target> [ssh_opts...] <image_name> [--force]
@@ -1497,117 +1302,338 @@ docker_pull() { _docker_image_sync "$@"; }
 alias docker-push='docker_push'
 alias docker-pull='docker_pull'
 
-function check_proxy() {
-    # 1. 解析输入
-    local INPUT=${1:-"10.77.110.128:20172"}
-    local TARGET_URL="${2:-"https://www.google.com"}"
-    if [[ -z "$INPUT" ]]; then
-        echo "❌ 用法: check_proxy IP:PORT [TARGET_URL]"
-        echo "   示例: check_proxy 10.77.110.128:20172 https://www.google.com"
-        return 1
-    fi
-    
-    local IP=${INPUT%:*}
-    local PORT=${INPUT#*:}
-    # 定义颜色
-    local GREEN='\033[0;32m'
-    local RED='\033[0;31m'
-    local YELLOW='\033[1;33m'
-    local NC='\033[0m' # No Color
+# Shared rsync/scp sync engine used by all higher-level sync commands.
+_remote_sync_scp_fallback() {
+    local mode="$1"
+    local local_dir="$2"
+    local remote_dir="$3"
+    local remote_target="$4"
+    local patterns_csv="$5"
+    shift 5
+    local remote_opts=("$@")
 
-    echo "------------------------------------------------"
-    echo -e "🔍 开始测试代理: ${YELLOW}${INPUT}${NC}"
-    echo -e "🎯 目标 URL: ${YELLOW}${TARGET_URL}${NC}"
-    echo "------------------------------------------------"
+    local local_dir_clean="${local_dir%/}"
+    local remote_dir_clean="${remote_dir%/}"
 
-    # --- 阶段 1: IP 连通性测试 (Ping) ---
-    echo -n "1. [网络层] Ping IP ($IP)... "
-    # 检测系统是 Linux 还是 Mac (Darwin) 来调整 ping 参数
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        ping -c 2 -W 1000 "$IP" > /dev/null 2>&1
-    else
-        ping -c 2 -W 1 "$IP" > /dev/null 2>&1
+    local -a scp_cmd=(scp -r)
+    if [ ${#remote_opts[@]} -gt 0 ]; then
+        scp_cmd+=("${remote_opts[@]}")
     fi
 
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}通 (Pass)${NC}"
-    else
-        echo -e "${RED}不通 (Fail)${NC} -> 可能被禁 Ping 或 IP 不存在"
-        # 注意：Ping 不通不代表代理不能用，继续往下测
+    local -a ssh_cmd=(ssh)
+    if [ ${#remote_opts[@]} -gt 0 ]; then
+        ssh_cmd+=("${remote_opts[@]}")
     fi
 
-    # --- 阶段 2: 端口开放性测试 (自动回退) ---
-    echo -n "2. [传输层] 端口连通性 ($PORT)... "
-    local PORT_OPEN=0
-    
-    # 策略 A: 使用 netcat (nc)
-    if command -v nc >/dev/null 2>&1; then
-        if nc -z -w 2 "$IP" "$PORT" >/dev/null 2>&1; then
-            PORT_OPEN=1
-        fi
-    # 策略 B: 使用 bash 原生 /dev/tcp (如果 nc 不存在)
-    else
-        # timeout 命令防止卡死，如果没有 timeout 命令，风险较高但也能跑
-        if timeout 2 bash -c "</dev/tcp/$IP/$PORT" >/dev/null 2>&1; then
-             PORT_OPEN=1
-        fi
-    fi
+    case "$mode" in
+        push)
+            "${ssh_cmd[@]}" "$remote_target" "mkdir -p $remote_dir_clean"
+            if [ $? -ne 0 ]; then
+                return 1
+            fi
+            if [ -z "$patterns_csv" ]; then
+                "${scp_cmd[@]}" "$local_dir_clean/." "${remote_target}:${remote_dir_clean}/"
+                return $?
+            fi
 
-    if [ $PORT_OPEN -eq 1 ]; then
-        echo -e "${GREEN}打开 (Open)${NC}"
-    else
-        echo -e "${RED}关闭或拦截 (Closed/Blocked)${NC}"
-        echo "   ⛔ 端口不通，停止后续代理测试。"
-        return 1
-    fi
+            local IFS='|'
+            local -a patterns=()
+            local pattern
+            local local_file
+            local has_source=0
+            read -r -a patterns <<< "$patterns_csv"
+            IFS=$' \t\n'
 
-    # --- 阶段 3: 代理功能与延迟测试 (自动回退) ---
-    echo -n "3. [应用层] 代理握手与延迟... "
-    
-    # 策略 A: 优先使用 curl (能提供精确的时间分析)
-    if command -v curl >/dev/null 2>&1; then
-        echo -e "\n   👉 使用 Curl 引擎测试..."
-        # 结果捕获
-        RESULT=$(curl -o /dev/null -s -w "%{http_code}:%{time_connect}:%{time_total}" --connect-timeout 5 -x "http://$IP:$PORT" "$TARGET_URL")
-        
-        local HTTP_CODE=$(echo "$RESULT" | cut -d':' -f1)
-        local TIME_CONN=$(echo "$RESULT" | cut -d':' -f2)
-        local TIME_TOTAL=$(echo "$RESULT" | cut -d':' -f3)
+            for pattern in "${patterns[@]}"; do
+                local matched=0
+                local -a matched_files=()
+                while IFS= read -r -d '' local_file; do
+                    matched_files+=("$local_file")
+                done < <(find "$local_dir_clean" -maxdepth 1 -type f -name "$pattern" -print0)
 
-        if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "301" ] || [ "$HTTP_CODE" == "302" ]; then
-             echo -e "   状态: ${GREEN}正常 (HTTP $HTTP_CODE)${NC}"
-             echo -e "   连接耗时: ${GREEN}${TIME_CONN}s${NC}"
-             echo -e "   总延迟:   ${GREEN}${TIME_TOTAL}s${NC}"
-        else
-             echo -e "   状态: ${RED}失败 (HTTP $HTTP_CODE)${NC} - 代理可能无法连接外网"
-        fi
+                if [ ${#matched_files[@]} -eq 0 ]; then
+                    echo "⚠️  跳过不存在的文件: $local_dir_clean/$pattern"
+                    continue
+                fi
 
-    # 策略 B: 回退使用 wget (如果没有 curl)
-    elif command -v wget >/dev/null 2>&1; then
-        echo -e "\n   👉 (Curl缺失) 回退使用 Wget + Time 测试..."
-        export http_proxy="http://$IP:$PORT"
-        export https_proxy="http://$IP:$PORT"
-        
-        # 使用 time 指令来计算耗时
-        # time 的输出格式在不同 shell 下不同，这里直接显示 time 的输出给用户看
-        if wget --spider --timeout=5 --tries=1 "$TARGET_URL" >/dev/null 2>&1; then
-             echo -e "   状态: ${GREEN}正常 (连接成功)${NC}"
-             echo "   (由于没有curl，无法精确分层耗时，请参考下方 time 输出)"
-        else
-             echo -e "   状态: ${RED}失败${NC}"
-        fi
-        
-        # 清理环境变量
-        unset http_proxy https_proxy
+                for local_file in "${matched_files[@]}"; do
+                    "${scp_cmd[@]}" "$local_file" "${remote_target}:${remote_dir_clean}/"
+                    if [ $? -ne 0 ]; then
+                        return 1
+                    fi
+                    has_source=1
+                    matched=1
+                done
+                if [ "$matched" -eq 0 ]; then
+                    echo "⚠️  未匹配到文件: $local_dir_clean/$pattern"
+                fi
+            done
+            if [ "$has_source" -eq 0 ]; then
+                echo "⚠️  未发现可同步文件，已按无变更处理"
+            fi
+            ;;
+        pull)
+            mkdir -p "$local_dir_clean"
+            if [ -z "$patterns_csv" ]; then
+                "${scp_cmd[@]}" "${remote_target}:${remote_dir_clean}/." "$local_dir_clean/"
+                return $?
+            fi
 
-    else
-        echo -e "${RED}失败${NC}"
-        echo "   ❌ 系统既没有 curl 也没有 wget，无法测试 HTTP 代理。"
-    fi
-    echo "------------------------------------------------"
+            local IFS='|'
+            local -a patterns=()
+            local pattern
+            local remote_files
+            local found_any=0
+            read -r -a patterns <<< "$patterns_csv"
+            IFS=$' \t\n'
+
+            for pattern in "${patterns[@]}"; do
+                remote_files=$("${ssh_cmd[@]}" "$remote_target" \
+                    "for f in ${remote_dir_clean}/${pattern}; do
+                        [ -e \"$f\" ] && printf '%s\n' \"$f\";
+                    done")
+                if [ -z "$remote_files" ]; then
+                    echo "⚠️  未找到远程文件: ${remote_dir_clean}/${pattern}"
+                    continue
+                fi
+
+                while IFS= read -r remote_file; do
+                    [ -z "$remote_file" ] && continue
+                    "${scp_cmd[@]}" "${remote_target}:${remote_file}" "$local_dir_clean/"
+                    if [ $? -ne 0 ]; then
+                        return 1
+                    fi
+                    found_any=1
+                done <<< "$remote_files"
+            done
+            if [ "$found_any" -eq 0 ]; then
+                echo "⚠️  未找到可同步文件，已按无变更处理"
+            fi
+            ;;
+        *)
+            echo "Unknown sync mode: $mode"
+            return 1
+            ;;
+    esac
+    return 0
 }
-alias check-proxy='check_proxy'
-alias proxy-test='check_proxy'
-alias proxy_test='check_proxy'
 
+_remote_sync() {
+    local mode="$1"
+    local local_dir="$2"
+    local remote_dir="$3"
+    local patterns_csv="$4"
+    local sync_label="$5"
+    local extra_opts="$6"
+    shift 6
+
+    if [ "$mode" != "push" ] && [ "$mode" != "pull" ]; then
+        echo "Unknown sync mode: $mode"
+        return 1
+    fi
+
+    if [ $# -lt 1 ]; then
+        echo "Usage: ${sync_label}_${mode} <ssh_target> [ssh_opts...]"
+        echo "Example: ${sync_label}_${mode} user@host -p 2022"
+        return 1
+    fi
+
+    local -a remote_args=("$@")
+    local remote_target="${remote_args[0]}"
+
+    local -a remote_opts=()
+    if [ ${#remote_args[@]} -gt 1 ]; then
+        remote_opts=("${remote_args[@]:1}")
+    fi
+
+    local ssh_cmd="ssh"
+    if [ ${#remote_opts[@]} -gt 0 ]; then
+        ssh_cmd+=" ${remote_opts[*]}"
+    fi
+
+    local rsync_opts=(--mkpath)
+    if [ -n "$extra_opts" ]; then
+        rsync_opts+=("$extra_opts")
+    fi
+
+    if [ "$mode" = "push" ]; then
+        echo "Pushing local -> remote"
+        echo "From: $local_dir"
+        echo "To:   ${remote_target}:$remote_dir"
+    else
+        echo "Pulling remote -> local"
+        echo "From: ${remote_target}:$remote_dir"
+        echo "To:   $local_dir"
+    fi
+
+    local rsync_exit=1
+    if [ -z "$patterns_csv" ]; then
+        rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+            "$local_dir" "${remote_target}:$remote_dir"
+        rsync_exit=$?
+    else
+        local -a patterns=()
+        local IFS='|'
+        read -r -a patterns <<< "$patterns_csv"
+        IFS=$' \t\n'
+
+        local -a rsync_includes=()
+        local pattern
+        for pattern in "${patterns[@]}"; do
+            rsync_includes+=(--include="$pattern")
+        done
+
+        if [ "$mode" = "push" ]; then
+            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+                "${rsync_includes[@]}" \
+                --exclude='*' \
+                "$local_dir" "${remote_target}:$remote_dir"
+            rsync_exit=$?
+        else
+            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+                "${rsync_includes[@]}" \
+                --exclude='*' \
+                "${remote_target}:$remote_dir" "$local_dir"
+            rsync_exit=$?
+        fi
+    fi
+
+    if [ $rsync_exit -eq 0 ]; then
+        echo "Sync complete"
+        return 0
+    fi
+
+    echo "⚠️  rsync 同步失败，自动回退到 scp ..."
+    _remote_sync_scp_fallback "$mode" "$local_dir" "$remote_dir" "$remote_target" "$patterns_csv" "${remote_opts[@]}"
+    if [ $? -eq 0 ]; then
+        echo "✅ scp 回退同步完成"
+        return 0
+    fi
+    echo "❌ scp 回退同步失败"
+    return 1
+}
+# Sync Hugging Face model cache directories between machines.
+_hf_sync() {
+    if [ $# -lt 2 ]; then
+        local func_name="${FUNCNAME[1]}"
+        echo "Usage: $func_name <ssh_target> [ssh_opts...] <model_name>"
+        echo "Example: $func_name user@host -p 2022 Qwen/Qwen3-8B"
+        return 1
+    fi
+
+    local model="${@: -1}"
+    local remote_args=("${@:1:$#-1}")
+    local mode
+    case "${FUNCNAME[1]}" in
+        hf_push) mode="push" ;;
+        hf_pull) mode="pull" ;;
+        *) echo "❌ Unknown function name"; return 1 ;;
+    esac
+
+    local local_base="$HOME/.cache/huggingface/hub"
+    local model_dir="models--${model//\//--}"
+    local local_dir="$local_base/$model_dir/"
+    local remote_dir="~/.cache/huggingface/hub/$model_dir/"
+
+    echo "🔄 Syncing HuggingFace model cache: $model"
+    _remote_sync "$mode" "$local_dir" "$remote_dir" "" "hf" "--links" "${remote_args[@]}"
+}
+
+hf_push() { _hf_sync "$@"; }
+hf_pull() { _hf_sync "$@"; }
+alias hf-push='hf_push'
+alias hf-pull='hf_pull'
+# Sync arbitrary home-directory subtrees between machines.
+_data_sync() {
+    if [ $# -lt 2 ]; then
+        local func_name="${FUNCNAME[1]}"
+        echo "Usage: $func_name <ssh_target> [ssh_opts...] <dir_name>"
+        echo "Example: $func_name user@host -p 2022 data"
+        return 1
+    fi
+
+    local dir="${@: -1}"
+    local remote_args=("${@:1:$#-1}")
+    local mode
+    case "${FUNCNAME[1]}" in
+        data_push) mode="push" ;;
+        data_pull) mode="pull" ;;
+        *) echo "❌ Unknown function name"; return 1 ;;
+    esac
+
+    local local_dir="$HOME/$dir"
+    local remote_dir="~/$dir"
+
+    echo "🔄 Syncing directory: $dir"
+    _remote_sync "$mode" "$local_dir/" "$remote_dir/" "" "data" "--links" "${remote_args[@]}"
+}
+
+# 对外接口
+data_push() { _data_sync "$@"; }
+data_pull() { _data_sync "$@"; }
+alias data-push='data_push'
+alias data-pull='data_pull'
+# List cached Hugging Face models grouped by namespace prefix.
+hf_list() {
+    local CACHE_DIR="${HF_HOME:-$HOME/.cache}/huggingface/hub"
+
+    if [ ! -d "$CACHE_DIR" ]; then
+        echo "Cache directory does not exist: $CACHE_DIR"
+        return 1
+    fi
+
+    declare -A grouped_models
+
+    # 遍历所有模型目录
+    for dir in "$CACHE_DIR"/models--*/; do
+        local model_dir
+        model_dir=$(basename "$dir")
+        # 去掉 models-- 前缀
+        local model_name="${model_dir//models--/}"
+        # 将 -- 替换为 /，得到 user/model-name
+        model_name="${model_name//--//}"
+        # 取前缀作为分组 key
+        local prefix="${model_name%%/*}"
+        grouped_models["$prefix"]+="$model_name"$'\n'
+    done
+
+    echo "Models in Hugging Face cache (grouped by prefix):"
+    echo "-------------------------------------------------"
+
+    # 输出分组，前缀排序
+    for prefix in $(printf "%s\n" "${!grouped_models[@]}" | sort); do
+        echo "$prefix:"
+        while IFS= read -r model; do
+            [ -z "$model" ] && continue
+            echo "  - $model"
+        done <<< "$(printf "%s" "${grouped_models[$prefix]}" | sort)"
+    done
+}
+alias hf-list='hf_list'
+# Sync Claude local config files between machines.
+_claude_sync() {
+    local sync_mode="$1"
+    shift
+    _remote_sync "$sync_mode" "$HOME/.claude/" "~/.claude/" "settings.json|settings.json.*" "claude" "" "$@"
+}
+
+claude_push() { _claude_sync "push" "$@"; }
+claude_pull() { _claude_sync "pull" "$@"; }
+alias claude-push='claude_push'
+alias claude-pull='claude_pull'
+# Sync Codex local auth/config files between machines.
+_codex_sync() {
+    local sync_mode="$1"
+    shift
+    local patterns="auth.json|auth.json.*|config.toml.*"
+    _remote_sync "$sync_mode" "$HOME/.codex/" "~/.codex/" "$patterns" "codex" "" "$@"
+}
+
+codex_push() { _codex_sync "push" "$@"; }
+codex_pull() { _codex_sync "pull" "$@"; }
+alias codex-push='codex_push'
+alias codex-pull='codex_pull'
+
+# When the file is sourced, this returns immediately. When executed via
+# `bash bashrc_common.sh ...` or `bash -s -- ...`, it dispatches CLI commands.
 dotfile_cli_dispatch_if_executed "$@"

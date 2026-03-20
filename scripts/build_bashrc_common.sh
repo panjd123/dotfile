@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Build the single-file distributable by recursively expanding the development
+# entrypoint's `source "$DOTFILE_DEV_ROOT/..."` statements.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INPUT_FILE="${1:-$ROOT_DIR/src/bashrc_common.dev.sh}"
 OUTPUT_FILE="${2:-$ROOT_DIR/bashrc_common.sh}"
@@ -19,6 +21,8 @@ emit_file() {
       continue
     fi
 
+    # Only expand the project-local module sources used by the development
+    # entrypoint. All other lines are copied through unchanged.
     if [[ "$line" =~ ^source[[:space:]]+\"\$DOTFILE_DEV_ROOT/(.+)\"$ ]]; then
       emit_file "$SRC_ROOT/${BASH_REMATCH[1]}"
       continue

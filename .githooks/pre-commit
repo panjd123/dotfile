@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 
+# Keep the generated artifact in lockstep with src/ before every commit.
 "$repo_root/scripts/build_bashrc_common.sh"
 
 while IFS= read -r file; do
