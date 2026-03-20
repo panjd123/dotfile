@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+"$repo_root/scripts/build_bashrc_common.sh"
+
+while IFS= read -r file; do
+  bash -n "$file"
+done < <(find "$repo_root/src" -type f -name '*.sh' | sort)
+
+bash -n "$repo_root/bashrc_common.sh"
+git -C "$repo_root" add bashrc_common.sh

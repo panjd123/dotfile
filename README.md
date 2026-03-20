@@ -7,12 +7,23 @@
 ```bash
 # git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
 git clone https://github.com/panjd123/dotfile.git $HOME/.dotfile
-~/.dotfile/install_dotfile.sh
+bash ~/.dotfile/bashrc_common.sh install
 ```
 
 ```bash
-curl https://raw.githubusercontent.com/panjd123/dotfile/refs/heads/master/install_dotfile.sh | bash
+curl -fsSL https://raw.githubusercontent.com/panjd123/dotfile/master/bashrc_common.sh | bash -s -- install
 ```
+
+## Development
+
+源码在 `src/`，最终交付物仍然是仓库根目录的 `bashrc_common.sh`。
+
+```bash
+scripts/build_bashrc_common.sh
+git config core.hooksPath .githooks
+```
+
+`pre-commit` 会自动重建并暂存 `bashrc_common.sh`。
 
 ## Useful Software Install Scripts
 
