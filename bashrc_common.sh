@@ -825,6 +825,7 @@ codex_switch() {
     local src_auth="${HOME}/.codex/auth.json.${profile}"
     local dst_config="${HOME}/.codex/config.toml"
     local dst_auth="${HOME}/.codex/auth.json"
+    local openai_auth_backup="${HOME}/.codex/auth.json.openai"
 
     local has_src_config="0"
     if [ -f "$src_config" ]; then
@@ -832,6 +833,11 @@ codex_switch() {
     fi
 
     if [ -f "$src_auth" ]; then
+        # Preserve the current ChatGPT login before profile switch overwrites auth.json.
+        if [ -f "$dst_auth" ] && grep -Eq '"auth_mode"[[:space:]]*:[[:space:]]*"chatgpt"' "$dst_auth"; then
+            cp "$dst_auth" "$openai_auth_backup"
+        fi
+
         cp "$src_auth" "$dst_auth"
 
         if [ "$has_src_config" = "1" ]; then
