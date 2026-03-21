@@ -133,10 +133,13 @@ codex-push user@host
 codex-pull user@host
 opencode-push user@host
 opencode-pull user@host
+vibe-push user@host
+vibe-pull user@host
 ```
 
 `codex-push` / `codex-pull` only copy `auth.json`, `auth.json.*`, `config.toml`, and `config.toml.*` when the receiver does not already have that file.
 `claude-push` / `claude-pull` only copy `settings.json` and `settings.json.*` when the receiver does not already have that file.
+`vibe-push` / `vibe-pull` run `claude`, `codex`, and `opencode` sync in order with the same SSH target and options.
 
 ### Docker
 
