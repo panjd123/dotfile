@@ -45,6 +45,101 @@ bash ~/.dotfile/bashrc_common.sh detect-region
 bash ~/.dotfile/bashrc_common.sh refresh-region
 ```
 
+
+## Useful Software Install Notes
+
+```bash
+# nvidia
+sudo apt remove --purge 'nvidia-*' 'libnvidia-*'
+sudo add-apt-repository ppa:graphics-drivers/ppa
+sudo apt install -y nvidia-driver-590-open
+
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+# export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.18.0-1
+sudo apt update
+sudo apt install -y \
+  nvidia-container-toolkit \
+  nvidia-container-toolkit-base \
+  libnvidia-container-tools \
+  libnvidia-container1
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# docker
+sudo groupadd docker
+sudo usermod -aG docker panjunda
+newgrp docker
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# wget -qO- https://astral.sh/uv/install.sh | sh
+
+# vllm
+mkdir -p opt/vllm
+cd opt/vllm
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install vllm --torch-backend=auto
+
+# miniconda
+cd /tmp
+wget -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash miniconda.sh -b -p "$HOME/miniconda3"
+eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
+conda init bash
+conda config --set auto_activate_base false
+
+# rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# zellij
+cargo install --locked zellij
+
+# nvidia-htop
+uv tool install nvidia-htop
+```
+
+## Vibe coding setup
+
+```bash
+# nvm
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm install --lts
+node -v
+npm -v
+
+# npm mirror
+# npm config set registry https://registry.npmmirror.com/
+# npm config set registry https://registry.npmjs.org/
+
+# claude
+curl -fsSL https://claude.ai/install.sh | bash
+# irm https://claude.ai/install.ps1 | iex # Windows PowerShell
+
+# codex
+npm install -g @openai/codex
+# npm install -g @openai/codex-linux-x64@npm:@openai/codex@0.116.0-linux-x64
+
+# opencode
+curl -fsSL https://opencode.ai/install | bash
+# Install and configure oh-my-opencode by following the instructions here:
+# https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/refs/heads/dev/docs/guide/installation.md
+
+# others
+apt install -y gh curl wget htop tmux unzip aria2 zstd ca-certificates build-essential rsync
+
+# setup personal config
+git -C ~/.config/opencode/plugins init -b main && git -C ~/.config/opencode/plugins remote add origin https://github.com/panjd123/opencode-plugins.git && git -C ~/.config/opencode/plugins pull origin main
+
+git -C ~/.codex/skills init -b main && git -C ~/.codex/skills remote add origin https://github.com/panjd123/codex-skills-monorepo.git && git -C ~/.codex/skills pull origin main
+
+```
+
 ## Cheatsheet
 
 ### Directory
@@ -139,6 +234,7 @@ vibe-pull user@host
 
 `codex-push` / `codex-pull` only copy `auth.json`, `auth.json.*`, `config.toml`, and `config.toml.*` when the receiver does not already have that file.
 `claude-push` / `claude-pull` only copy `settings.json` and `settings.json.*` when the receiver does not already have that file.
+`opencode-push` / `opencode-pull` only sync `opencode.json` and `oh-my-opencode.json`; `~/.config/opencode/plugins` stays out of sync.
 `vibe-push` / `vibe-pull` run `claude`, `codex`, and `opencode` sync in order with the same SSH target and options.
 
 ### Docker
@@ -192,86 +288,6 @@ HF_ENDPOINT
 
 ```bash
 ~/.dotfile/.network_region
-```
-
-## Useful Software Install Notes
-
-```bash
-# nvidia
-sudo apt remove --purge 'nvidia-*' 'libnvidia-*'
-sudo add-apt-repository ppa:graphics-drivers/ppa
-sudo apt install -y nvidia-driver-590-open
-
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-# export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.18.0-1
-sudo apt update
-sudo apt install -y \
-  nvidia-container-toolkit \
-  nvidia-container-toolkit-base \
-  libnvidia-container-tools \
-  libnvidia-container1
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-
-# docker
-sudo groupadd docker
-sudo usermod -aG docker panjunda
-newgrp docker
-
-# uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# wget -qO- https://astral.sh/uv/install.sh | sh
-
-# vllm
-mkdir -p opt/vllm
-cd opt/vllm
-uv venv --python 3.12 --seed
-source .venv/bin/activate
-uv pip install vllm --torch-backend=auto
-
-# miniconda
-cd /tmp
-`opencode-push` / `opencode-pull` only sync `opencode.json` and `oh-my-opencode.json`; `~/.config/opencode/plugins` stays out of sync.
-wget -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash miniconda.sh -b -p "$HOME/miniconda3"
-eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
-conda init bash
-conda config --set auto_activate_base false
-
-# nvm
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm install --lts
-node -v
-npm -v
-
-# npm mirror
-npm config set registry https://registry.npmmirror.com/
-npm config set registry https://registry.npmjs.org/
-
-# rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# zellij
-cargo install --locked zellij
-
-# nvidia-htop
-uv tool install nvidia-htop
-
-# claude
-curl -fsSL https://claude.ai/install.sh | bash
-irm https://claude.ai/install.ps1 | iex
-# npm install -g @anthropic-ai/claude-code
-# ~/.claude/settings.json
-# {"env": {"ANTHROPIC_BASE_URL": "xxx", "ANTHROPIC_AUTH_TOKEN": "xxx"}}
-
-# codex
-npm install -g @openai/codex
-npm install -g @openai/codex-linux-x64@npm:@openai/codex@0.111.0-linux-x64
 ```
 
 ## Ubuntu 24.04 Chromium Lib
