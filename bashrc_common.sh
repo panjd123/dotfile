@@ -1671,7 +1671,8 @@ alias codex-pull='codex_pull'
 _opencode_sync() {
     local sync_mode="$1"
     shift
-    local patterns="opencode.json|oh-my-opencode.json|plugins/"
+    # Plugins are managed as their own git repo and are not part of opencode sync.
+    local patterns="opencode.json|oh-my-opencode.json"
     _remote_sync "$sync_mode" "$HOME/.config/opencode/" "~/.config/opencode/" "$patterns" "opencode" "" "$@"
 }
 
