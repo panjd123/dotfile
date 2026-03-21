@@ -135,8 +135,8 @@ opencode-push user@host
 opencode-pull user@host
 ```
 
-`codex-push` / `codex-pull` will only copy `auth.json.*` when the receiver does not already have that profile file.
-`claude-push` / `claude-pull` do not sync `settings.json`; `settings.json.*` is only copied when the receiver does not already have that profile file.
+`codex-push` / `codex-pull` only copy `auth.json`, `auth.json.*`, `config.toml`, and `config.toml.*` when the receiver does not already have that file.
+`claude-push` / `claude-pull` only copy `settings.json` and `settings.json.*` when the receiver does not already have that file.
 
 ### Docker
 

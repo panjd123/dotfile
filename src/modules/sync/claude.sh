@@ -2,9 +2,9 @@
 _claude_sync() {
     local sync_mode="$1"
     shift
-    # Profile settings can be machine-specific, so we only seed missing
-    # settings.json.* files and never sync the active settings.json directly.
-    _remote_sync "$sync_mode" "$HOME/.claude/" "~/.claude/" "settings.json.*" "claude" "--ignore-existing" "$@"
+    # Claude settings can be machine-specific, so push/pull only seeds missing
+    # files on the receiver and never overwrites an existing one.
+    _remote_sync "$sync_mode" "$HOME/.claude/" "~/.claude/" "settings.json|settings.json.*" "claude" "--ignore-existing" "$@"
 }
 
 claude_push() { _claude_sync "push" "$@"; }
