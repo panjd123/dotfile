@@ -131,7 +131,11 @@ claude-push user@host
 claude-pull user@host
 codex-push user@host
 codex-pull user@host
+opencode-push user@host
+opencode-pull user@host
 ```
+
+`codex-push` / `codex-pull` will only copy `auth.json.*` when the receiver does not already have that profile file.
 
 ### Docker
 

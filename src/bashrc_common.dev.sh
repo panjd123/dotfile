@@ -45,6 +45,7 @@ source "$DOTFILE_DEV_ROOT/modules/sync/directories.sh"
 source "$DOTFILE_DEV_ROOT/modules/sync/huggingface_cache.sh"
 source "$DOTFILE_DEV_ROOT/modules/sync/claude.sh"
 source "$DOTFILE_DEV_ROOT/modules/sync/codex.sh"
+source "$DOTFILE_DEV_ROOT/modules/sync/opencode.sh"
 
 # When the file is sourced, this returns immediately. When executed via
 # `bash bashrc_common.sh ...` or `bash -s -- ...`, it dispatches CLI commands.
