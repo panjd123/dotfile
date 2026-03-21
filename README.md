@@ -234,6 +234,7 @@ uv pip install vllm --torch-backend=auto
 
 # miniconda
 cd /tmp
+`opencode-push` / `opencode-pull` only sync `opencode.json` and `oh-my-opencode.json`; `~/.config/opencode/plugins` stays out of sync.
 wget -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash miniconda.sh -b -p "$HOME/miniconda3"
 eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
