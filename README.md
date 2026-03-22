@@ -221,6 +221,9 @@ hf_pull user@host Qwen/Qwen3-8B
 
 data_push user@host data
 data_pull user@host data
+data_push user@host '~'
+data_pull user@host '~/.cache/huggingface'
+data_push user@host /mnt/shared
 
 claude-push user@host
 claude-pull user@host
@@ -234,6 +237,8 @@ vibe-pull user@host
 
 `codex-push` / `codex-pull` only copy `auth.json`, `auth.json.*`, `config.toml`, and `config.toml.*` when the receiver does not already have that file. Both always overwrite `auth.json.openai`.
 `claude-push` / `claude-pull` only copy `settings.json` and `settings.json.*` when the receiver does not already have that file.
+`data-push` / `data-pull` remap the last argument to each machine's own home directory only when it points under the current user's home, such as `data`, `~`, `~/foo`, or an already-expanded local path like `/home/alice/foo`. Other absolute paths like `/mnt/shared` are synced as the same absolute path on both sides. Quote `~` if you want to keep it literal in shell history examples.
+When in doubt: relative paths are treated as under `~`, current-user home paths are re-rooted to each side's own `~`, and non-home absolute paths are left untouched.
 `opencode-push` / `opencode-pull` fully sync `oh-my-opencode.json` and `gen_oh_my_opencode.py`. For `opencode.json`, they copy the whole file when the receiver has no file yet, otherwise only merge the `provider` field; `~/.config/opencode/plugins` stays out of sync.
 `vibe-push` / `vibe-pull` run `claude`, `codex`, and `opencode` sync in order with the same SSH target and options.
 
