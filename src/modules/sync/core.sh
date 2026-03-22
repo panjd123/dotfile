@@ -190,9 +190,17 @@ _remote_sync() {
 
     local rsync_exit=1
     if [ -z "$patterns_csv" ]; then
-        rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
-            "$local_dir" "${remote_target}:$remote_dir"
-        rsync_exit=$?
+        # The full-tree fast path still needs separate push/pull argument order.
+        # Otherwise pull commands log the right direction but actually push.
+        if [ "$mode" = "push" ]; then
+            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+                "$local_dir" "${remote_target}:$remote_dir"
+            rsync_exit=$?
+        else
+            rsync -avzP "${rsync_opts[@]}" -e "$ssh_cmd" \
+                "${remote_target}:$remote_dir" "$local_dir"
+            rsync_exit=$?
+        fi
     else
         local -a patterns=()
         local IFS='|'
