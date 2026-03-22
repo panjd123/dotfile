@@ -1862,7 +1862,7 @@ _opencode_sync() {
     local sync_mode="$1"
     shift
     # Plugins are managed as their own git repo and are not part of opencode sync.
-    _remote_sync "$sync_mode" "$HOME/.config/opencode/" "~/.config/opencode/" "oh-my-opencode.json" "opencode" "" "$@" || return 1
+    _remote_sync "$sync_mode" "$HOME/.config/opencode/" "~/.config/opencode/" "oh-my-opencode.json|gen_oh_my_opencode.py" "opencode" "" "$@" || return 1
     _opencode_sync_provider "$sync_mode" "$@" || return 1
 }
 

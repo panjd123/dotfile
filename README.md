@@ -234,7 +234,7 @@ vibe-pull user@host
 
 `codex-push` / `codex-pull` only copy `auth.json`, `auth.json.*`, `config.toml`, and `config.toml.*` when the receiver does not already have that file. Both always overwrite `auth.json.openai`.
 `claude-push` / `claude-pull` only copy `settings.json` and `settings.json.*` when the receiver does not already have that file.
-`opencode-push` / `opencode-pull` fully sync `oh-my-opencode.json`. For `opencode.json`, they copy the whole file when the receiver has no file yet, otherwise only merge the `provider` field; `~/.config/opencode/plugins` stays out of sync.
+`opencode-push` / `opencode-pull` fully sync `oh-my-opencode.json` and `gen_oh_my_opencode.py`. For `opencode.json`, they copy the whole file when the receiver has no file yet, otherwise only merge the `provider` field; `~/.config/opencode/plugins` stays out of sync.
 `vibe-push` / `vibe-pull` run `claude`, `codex`, and `opencode` sync in order with the same SSH target and options.
 
 ### Docker
