@@ -30,7 +30,6 @@ source "$DOTFILE_DEV_ROOT/modules/python/vllm_bench.sh"
 source "$DOTFILE_DEV_ROOT/modules/profiles/claude.sh"
 source "$DOTFILE_DEV_ROOT/modules/profiles/codex.sh"
 
-source "$DOTFILE_DEV_ROOT/modules/system/systemd.sh"
 source "$DOTFILE_DEV_ROOT/modules/system/path.sh"
 source "$DOTFILE_DEV_ROOT/modules/system/transfer_presets.sh"
 source "$DOTFILE_DEV_ROOT/modules/system/process_inspection.sh"

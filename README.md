@@ -8,21 +8,45 @@
 # git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
 git clone https://github.com/panjd123/dotfile.git $HOME/.dotfile
 bash ~/.dotfile/bashrc_common.sh install
+
+# 非交互安装，默认会应用 authorized_keys 和 sshd_config 变更
+bash ~/.dotfile/bashrc_common.sh install -y
+
+# 只安装 shell 配置，不修改 SSH
+bash ~/.dotfile/bashrc_common.sh install -y --ssh=skip
+
+# 分别控制 authorized_keys 和 sshd_config
+bash ~/.dotfile/bashrc_common.sh install -y --ssh-keys=apply --sshd=skip
 ```
 
 也可以直接使用单文件安装：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/panjd123/dotfile/master/bashrc_common.sh | bash -s -- install
+curl -fsSL https://raw.githubusercontent.com/panjd123/dotfile/master/bashrc_common.sh | bash -s -- install -y --sshd=skip
 ```
 
 安装流程会：
 
 - 刷新或下载 `bashrc_common.sh`
-- 自动把 `source ~/.dotfile/bashrc_common.sh` 写入 `~/.bashrc`
+- 自动探测 Bash / Zsh，并把 `source ~/.dotfile/bashrc_common.sh` 写入对应的 `~/.bashrc` / `~/.zshrc`
 - 自动探测当前网络区域并写入 `~/.dotfile/.network_region`
 - 仅在中国大陆网络下启用相关镜像配置
-- 按需提示更新 SSH 配置和 `authorized_keys`
+- 按策略处理 SSH 公钥和 `sshd_config` 变更
+
+`install` 支持以下参数：
+
+- `-y` / `--yes` / `-b` / `--batch`: 非交互安装
+- `--ssh=prompt|apply|skip`: 一次设置 SSH 公钥和 `sshd_config` 的默认策略
+- `--ssh-keys=prompt|apply|skip`: 单独控制 `~/.ssh/authorized_keys`
+- `--sshd=prompt|apply|skip`: 单独控制 `/etc/ssh/sshd_config`
+
+默认行为：
+
+- 交互模式下，SSH 公钥和 `sshd_config` 都默认 `prompt`
+- 非交互模式下，SSH 公钥和 `sshd_config` 都默认 `apply`
+- 非交互模式修改 `sshd_config` 时会自动尝试 `sudo -n`
+- 如果非交互模式下需要修改 `sshd_config`，但当前环境拿不到可用的 sudo 权限，安装会直接失败并返回非零退出码
 
 ## Update
 
@@ -41,6 +65,7 @@ update-dotfile
 ```bash
 bash ~/.dotfile/bashrc_common.sh help
 bash ~/.dotfile/bashrc_common.sh install
+bash ~/.dotfile/bashrc_common.sh install -y --ssh-keys=skip
 bash ~/.dotfile/bashrc_common.sh detect-region
 bash ~/.dotfile/bashrc_common.sh refresh-region
 ```
@@ -255,17 +280,6 @@ docker-pull user@host nginx:alpine --force
 
 ollamad list
 vllamad list
-```
-
-### Systemd
-
-```bash
-sup ssh
-sdown ssh
-sstatus ssh
-susta my-service
-suup my-service
-sudown my-service
 ```
 
 ### Misc

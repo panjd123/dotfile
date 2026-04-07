@@ -53,7 +53,7 @@
 - `modules/gpu/`: GPU 监控快捷命令
 - `modules/python/`: Python 环境、Hugging Face 下载、vLLM bench
 - `modules/profiles/`: Claude/Codex profile 切换
-- `modules/system/`: systemd、PATH、下载预设、进程观察
+- `modules/system/`: PATH、下载预设、进程观察
 - `modules/docker/`: 容器 shell、容器快捷别名、Docker 镜像传输
 - `modules/sync/`: 跨机器同步基础设施及具体同步命令
 
@@ -125,6 +125,13 @@ find src -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 bash bashrc_common.sh help
 bash -s -- help < bashrc_common.sh
 ```
+
+如果改了安装流程，额外检查这些行为：
+
+- `install` 会把 `source ~/.dotfile/bashrc_common.sh` 写入探测到的 `~/.bashrc` 和 `~/.zshrc`
+- `install -y` 默认会应用 SSH 公钥和 `sshd_config` 变更
+- agent 或自动化如果不应改 SSH，必须显式传 `--ssh=skip`，或分别传 `--ssh-keys=skip` / `--sshd=skip`
+- 非交互模式修改 `sshd_config` 时应自动尝试 `sudo -n`，拿不到权限时返回非零而不是静默跳过
 
 ## Runtime Files
 

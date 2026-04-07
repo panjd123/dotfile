@@ -148,13 +148,46 @@ dotfile_reload_common_file() {
   echo "[dotfile] 已重新加载 ✅"
 }
 
-dotfile_ensure_bashrc_source() {
-  if ! grep -qF "source $COMMON_FILE" "$HOME/.bashrc"; then
-    echo "source $COMMON_FILE" >> "$HOME/.bashrc"
-    echo "[dotfile] 已自动将 $COMMON_FILE 加入 ~/.bashrc"
-  else
-    echo "[dotfile] ~/.bashrc 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
+dotfile_detect_shell_rc_files() {
+  local -a rc_files=()
+
+  if [ -f "$HOME/.bashrc" ] || command -v bash >/dev/null 2>&1; then
+    rc_files+=("$HOME/.bashrc")
   fi
+
+  if [ -f "$HOME/.zshrc" ] || command -v zsh >/dev/null 2>&1; then
+    rc_files+=("$HOME/.zshrc")
+  fi
+
+  if [ ${#rc_files[@]} -eq 0 ]; then
+    rc_files=("$HOME/.bashrc")
+  fi
+
+  printf '%s\n' "${rc_files[@]}"
+}
+
+dotfile_ensure_shell_rc_source() {
+  local rc_file="$1"
+
+  if [ ! -f "$rc_file" ]; then
+    touch "$rc_file" || return 1
+    echo "[dotfile] 已创建 $(basename "$rc_file")"
+  fi
+
+  if ! grep -qF "source $COMMON_FILE" "$rc_file"; then
+    printf 'source %s\n' "$COMMON_FILE" >> "$rc_file" || return 1
+    echo "[dotfile] 已自动将 $COMMON_FILE 加入 $rc_file"
+  else
+    echo "[dotfile] $rc_file 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
+  fi
+}
+
+dotfile_ensure_shell_sources() {
+  local rc_file=""
+
+  for rc_file in $(dotfile_detect_shell_rc_files); do
+    dotfile_ensure_shell_rc_source "$rc_file" || return 1
+  done
 }
 # SSH config/key planning and application used by the install flow.
 dotfile_install_reset_plan() {
@@ -211,13 +244,15 @@ dotfile_plan_key_changes() {
 }
 
 dotfile_apply_sshd_changes() {
-  local use_sudo="$1"
+  local sudo_mode="$1"
   local config_changed=false
   local sudo_cmd=()
   local item=""
 
-  if [ "$use_sudo" = true ]; then
+  if [ "$sudo_mode" = "interactive" ]; then
     sudo_cmd=(sudo)
+  elif [ "$sudo_mode" = "noninteractive" ]; then
+    sudo_cmd=(sudo -n)
   fi
 
   for item in "${DOTFILE_SSH_CONFIG_CHECKS[@]}"; do
@@ -230,13 +265,13 @@ dotfile_apply_sshd_changes() {
       local current_value
       current_value=$(echo "$current_setting" | awk '{print $2}')
       if [[ "$current_value" != "$target_value" ]]; then
-        "${sudo_cmd[@]}" sed -i "s|^[[:space:]]*${key}.*|${key} ${target_value}|g" "$DOTFILE_SSHD_CONFIG_FILE"
+        "${sudo_cmd[@]}" sed -i "s|^[[:space:]]*${key}.*|${key} ${target_value}|g" "$DOTFILE_SSHD_CONFIG_FILE" || return 1
         config_changed=true
       fi
     else
       local default_value="${DOTFILE_DEFAULT_SSH_VALUES[$key]}"
       if [[ -z "$default_value" ]] || [[ "$default_value" != "$target_value" ]]; then
-        printf '%s\n' "${key} ${target_value}" | "${sudo_cmd[@]}" tee -a "$DOTFILE_SSHD_CONFIG_FILE" > /dev/null
+        printf '%s\n' "${key} ${target_value}" | "${sudo_cmd[@]}" tee -a "$DOTFILE_SSHD_CONFIG_FILE" > /dev/null || return 1
         config_changed=true
       fi
     fi
@@ -245,9 +280,9 @@ dotfile_apply_sshd_changes() {
   if [ "$config_changed" = true ]; then
     echo "[dotfile] 正在重启 SSH 服务..."
     if command -v systemctl >/dev/null 2>&1; then
-      "${sudo_cmd[@]}" systemctl restart sshd || "${sudo_cmd[@]}" systemctl restart ssh
+      "${sudo_cmd[@]}" systemctl restart sshd || "${sudo_cmd[@]}" systemctl restart ssh || return 1
     elif command -v service >/dev/null 2>&1; then
-      "${sudo_cmd[@]}" service sshd restart || "${sudo_cmd[@]}" service ssh restart
+      "${sudo_cmd[@]}" service sshd restart || "${sudo_cmd[@]}" service ssh restart || return 1
     else
       echo "[dotfile] 警告: 无法自动重启 SSH 服务，请手动重启以应用更改。"
     fi
@@ -259,13 +294,13 @@ dotfile_apply_key_changes() {
   ssh_dir=$(dirname "$DOTFILE_AUTHORIZED_KEYS_FILE")
 
   if [ ! -d "$ssh_dir" ]; then
-    mkdir -p "$ssh_dir"
-    chmod 700 "$ssh_dir"
+    mkdir -p "$ssh_dir" || return 1
+    chmod 700 "$ssh_dir" || return 1
   fi
 
   if [ ! -f "$DOTFILE_AUTHORIZED_KEYS_FILE" ]; then
-    touch "$DOTFILE_AUTHORIZED_KEYS_FILE"
-    chmod 600 "$DOTFILE_AUTHORIZED_KEYS_FILE"
+    touch "$DOTFILE_AUTHORIZED_KEYS_FILE" || return 1
+    chmod 600 "$DOTFILE_AUTHORIZED_KEYS_FILE" || return 1
   fi
 
   local key=""
@@ -273,12 +308,160 @@ dotfile_apply_key_changes() {
     local key_fingerprint
     key_fingerprint=$(echo "$key" | awk '{print $2}')
     if ! grep -qF "$key_fingerprint" "$DOTFILE_AUTHORIZED_KEYS_FILE"; then
-      printf '%s\n' "$key" >> "$DOTFILE_AUTHORIZED_KEYS_FILE"
+      printf '%s\n' "$key" >> "$DOTFILE_AUTHORIZED_KEYS_FILE" || return 1
     fi
   done
 }
+# Install options are handled here instead of the top-level CLI so curl-piped
+# and sourced usage share the same behavior.
+dotfile_install_usage() {
+  cat <<'EOF'
+Usage:
+  bashrc_common.sh install [options]
+
+Options:
+  -y, --yes, -b, --batch
+      Non-interactive mode. By default it applies SSH key and sshd changes.
+  --ssh=prompt|apply|skip
+      Set the default policy for both SSH key and sshd changes.
+  --ssh-keys=prompt|apply|skip
+      Override only authorized_keys updates.
+  --sshd=prompt|apply|skip
+      Override only sshd_config updates.
+  -h, --help
+      Show this help.
+EOF
+}
+
+dotfile_install_validate_policy() {
+  case "$1" in
+    prompt|apply|skip)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+dotfile_install_confirm() {
+  local prompt="$1"
+
+  if ! read -p "$prompt" -n 1 -r < /dev/tty; then
+    echo ""
+    return 1
+  fi
+
+  echo ""
+  [[ $REPLY =~ ^[Yy]$ ]]
+}
+
+dotfile_apply_sshd_changes_with_auto_sudo() {
+  local non_interactive="$1"
+
+  if [ ${#DOTFILE_INSTALL_PLAN_SSH_CONFIG[@]} -eq 0 ]; then
+    return 0
+  fi
+
+  if [ -w "$DOTFILE_SSHD_CONFIG_FILE" ]; then
+    echo "[dotfile] 检测到有写权限，直接修改配置..."
+    dotfile_apply_sshd_changes none
+    return $?
+  fi
+
+  if [ "$non_interactive" = true ]; then
+    echo "[dotfile] SSH 配置文件需要管理员权限，正在尝试 sudo -n ..."
+    if sudo -n true >/dev/null 2>&1; then
+      dotfile_apply_sshd_changes noninteractive
+      return $?
+    fi
+
+    echo "[dotfile] 错误: 修改 $DOTFILE_SSHD_CONFIG_FILE 需要 sudo，但当前环境无法无交互获取 sudo 权限。"
+    return 1
+  fi
+
+  echo "[dotfile] SSH 配置文件需要管理员权限，正在请求 sudo..."
+  if sudo -v; then
+    dotfile_apply_sshd_changes interactive
+    return $?
+  fi
+
+  echo "[dotfile] 错误: 无法获取 sudo 权限。"
+  return 1
+}
+
 # End-user install command, usable from both repo checkouts and curl installs.
 dotfile_install() {
+  local non_interactive=false
+  local ssh_policy=""
+  local ssh_keys_policy=""
+  local sshd_policy=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -y|--yes|-b|--batch)
+        non_interactive=true
+        ;;
+      --ssh=*)
+        ssh_policy="${1#*=}"
+        ;;
+      --ssh-keys=*)
+        ssh_keys_policy="${1#*=}"
+        ;;
+      --sshd=*)
+        sshd_policy="${1#*=}"
+        ;;
+      -h|--help)
+        dotfile_install_usage
+        return 0
+        ;;
+      *)
+        echo "[dotfile] 错误: install 不支持参数: $1" >&2
+        dotfile_install_usage >&2
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  if [ -n "$ssh_policy" ] && ! dotfile_install_validate_policy "$ssh_policy"; then
+    echo "[dotfile] 错误: --ssh 仅支持 prompt、apply、skip。" >&2
+    return 1
+  fi
+
+  if [ -n "$ssh_keys_policy" ] && ! dotfile_install_validate_policy "$ssh_keys_policy"; then
+    echo "[dotfile] 错误: --ssh-keys 仅支持 prompt、apply、skip。" >&2
+    return 1
+  fi
+
+  if [ -n "$sshd_policy" ] && ! dotfile_install_validate_policy "$sshd_policy"; then
+    echo "[dotfile] 错误: --sshd 仅支持 prompt、apply、skip。" >&2
+    return 1
+  fi
+
+  if [ -z "$ssh_policy" ]; then
+    if [ "$non_interactive" = true ]; then
+      ssh_policy="apply"
+    else
+      ssh_policy="prompt"
+    fi
+  fi
+
+  if [ -z "$ssh_keys_policy" ]; then
+    ssh_keys_policy="$ssh_policy"
+  fi
+
+  if [ -z "$sshd_policy" ]; then
+    sshd_policy="$ssh_policy"
+  fi
+
+  if [ "$non_interactive" = true ]; then
+    if [ "$ssh_keys_policy" = "prompt" ] || [ "$sshd_policy" = "prompt" ]; then
+      echo "[dotfile] 错误: 非交互模式下不能使用 prompt 策略，请改用 apply 或 skip。" >&2
+      return 1
+    fi
+  fi
+
   echo "[dotfile] 检查 dotfile 仓库..."
 
   # Install works in both "full repo checkout" and "curl single-file" modes.
@@ -297,7 +480,7 @@ dotfile_install() {
   fi
 
   dotfile_refresh_network_region
-  dotfile_ensure_bashrc_source
+  dotfile_ensure_shell_sources || return 1
 
   echo "正在扫描系统变更..."
   dotfile_install_reset_plan
@@ -327,34 +510,46 @@ dotfile_install() {
     printf "  - %s\n" "${DOTFILE_INSTALL_PLAN_SSH_KEYS[@]}"
   fi
 
-  echo ""
-  read -p "[dotfile] 是否执行上述变更？: " -n 1 -r < /dev/tty
-  echo ""
-
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "[dotfile] 开始执行变更..."
-
-    if [ ${#DOTFILE_INSTALL_PLAN_SSH_CONFIG[@]} -gt 0 ]; then
-      if [ -w "$DOTFILE_SSHD_CONFIG_FILE" ]; then
-        echo "[dotfile] 检测到有写权限，直接修改配置..."
-        dotfile_apply_sshd_changes false
-      else
-        echo "[dotfile] SSH 配置文件需要管理员权限，正在请求 sudo..."
-        if sudo -v 2>/dev/null; then
-          dotfile_apply_sshd_changes true
+  if [ ${#DOTFILE_INSTALL_PLAN_SSH_KEYS[@]} -gt 0 ]; then
+    case "$ssh_keys_policy" in
+      apply)
+        echo "[dotfile] 开始写入 SSH 公钥..."
+        dotfile_apply_key_changes || return 1
+        ;;
+      skip)
+        echo "[dotfile] 根据策略跳过 SSH 公钥变更。"
+        ;;
+      prompt)
+        echo ""
+        if dotfile_install_confirm "[dotfile] 是否写入上述 SSH 公钥变更？: "; then
+          echo "[dotfile] 开始写入 SSH 公钥..."
+          dotfile_apply_key_changes || return 1
         else
-          echo "[dotfile] 错误: 无法获取 sudo 权限，跳过 SSH 配置修改。"
+          echo "[dotfile] 已跳过 SSH 公钥变更。"
         fi
-      fi
-    fi
+        ;;
+    esac
+  fi
 
-    if [ ${#DOTFILE_INSTALL_PLAN_SSH_KEYS[@]} -gt 0 ]; then
-      dotfile_apply_key_changes
-    fi
-
-    echo "[dotfile] 变更已完成。"
-  else
-    echo "[dotfile] 已取消变更。"
+  if [ ${#DOTFILE_INSTALL_PLAN_SSH_CONFIG[@]} -gt 0 ]; then
+    case "$sshd_policy" in
+      apply)
+        echo "[dotfile] 开始修改 SSH 配置..."
+        dotfile_apply_sshd_changes_with_auto_sudo "$non_interactive" || return 1
+        ;;
+      skip)
+        echo "[dotfile] 根据策略跳过 SSH 配置变更。"
+        ;;
+      prompt)
+        echo ""
+        if dotfile_install_confirm "[dotfile] 是否修改上述 SSH 配置？: "; then
+          echo "[dotfile] 开始修改 SSH 配置..."
+          dotfile_apply_sshd_changes_with_auto_sudo false || return 1
+        else
+          echo "[dotfile] 已跳过 SSH 配置变更。"
+        fi
+        ;;
+    esac
   fi
 
   echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
@@ -363,16 +558,24 @@ dotfile_install() {
 dotfile_cli_usage() {
   cat <<'EOF'
 Usage:
-  bashrc_common.sh install
+  bashrc_common.sh install [options]
   bashrc_common.sh refresh-region
   bashrc_common.sh detect-region
   bashrc_common.sh help
+
+Install options:
+  -y, --yes, -b, --batch
+  --ssh=prompt|apply|skip
+  --ssh-keys=prompt|apply|skip
+  --sshd=prompt|apply|skip
 EOF
 }
 
 dotfile_cli() {
   local command="${1:-help}"
-  shift || true
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
 
   case "$command" in
     install)
@@ -396,6 +599,14 @@ dotfile_cli() {
 }
 
 dotfile_cli_dispatch_if_executed() {
+  # Zsh exposes sourced files through ZSH_EVAL_CONTEXT, while Bash uses
+  # BASH_SOURCE. Check both so `source bashrc_common.sh` does not dispatch.
+  case "${ZSH_EVAL_CONTEXT-}" in
+    *:file|*:file:*)
+      return 0
+      ;;
+  esac
+
   local source0="${BASH_SOURCE[0]-}"
 
   # `source file.sh` keeps BASH_SOURCE[0] as the file path, while `bash -s --`
@@ -959,64 +1170,6 @@ PY
 alias cxs='codex_switch'
 alias codex-switch='codex_switch'
 
-# Systemd shortcuts plus completion remapping for the custom aliases.
-# systemctl 相关
-alias sup='systemctl start'
-alias sdown='systemctl stop'
-alias sstatus='systemctl status'
-alias ssta='systemctl status'
-
-# alias su='systemctl --user'
-alias suup='systemctl --user start'
-alias sudown='systemctl --user stop'
-alias sustatus='systemctl --user status'
-alias susta='systemctl --user status'
-
-_systemctl_alias_completion() {
-    # COMP_WORDS 是包含当前命令行所有单词的数组
-    # COMP_CWORD 是光标所在单词的索引
-    local alias_cmd="${COMP_WORDS[0]}"
-    local words_after_alias=("${COMP_WORDS[@]:1}")
-    
-    # 使用 case 语句根据不同的别名，构建出实际的命令
-    case "$alias_cmd" in
-        sup)
-            COMP_WORDS=(systemctl start "${words_after_alias[@]}")
-            COMP_CWORD=$((COMP_CWORD + 1))
-            ;;
-        sdown)
-            COMP_WORDS=(systemctl stop "${words_after_alias[@]}")
-            COMP_CWORD=$((COMP_CWORD + 1))
-            ;;
-        sstatus|ssta) # 使用 | 将多个别名映射到同一个命令
-            COMP_WORDS=(systemctl status "${words_after_alias[@]}")
-            COMP_CWORD=$((COMP_CWORD + 1))
-            ;;
-        su)
-            COMP_WORDS=(systemctl --user "${words_after_alias[@]}")
-            COMP_CWORD=$((COMP_CWORD + 1))
-            ;;
-        suup)
-            COMP_WORDS=(systemctl --user start "${words_after_alias[@]}")
-            # 这里增加了2个单词 (--user, start)，所以索引要加2
-            COMP_CWORD=$((COMP_CWORD + 2))
-            ;;
-        sudown)
-            COMP_WORDS=(systemctl --user stop "${words_after_alias[@]}")
-            COMP_CWORD=$((COMP_CWORD + 2))
-            ;;
-        sustatus|susta)
-            COMP_WORDS=(systemctl --user status "${words_after_alias[@]}")
-            COMP_CWORD=$((COMP_CWORD + 2))
-            ;;
-    esac
-
-    # 调用 systemctl 原本的补全函数来处理我们伪造的命令行
-    _systemctl
-}
-complete -F _systemctl_alias_completion \
-    sup sdown sstatus ssta \
-    su suup sudown sustatus susta
 # PATH inspection shortcut.
 alias path='echo -e ${PATH//:/\\n}'
 # Pre-tuned aria2 download presets.

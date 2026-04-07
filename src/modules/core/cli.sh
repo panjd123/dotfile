@@ -2,16 +2,24 @@
 dotfile_cli_usage() {
   cat <<'EOF'
 Usage:
-  bashrc_common.sh install
+  bashrc_common.sh install [options]
   bashrc_common.sh refresh-region
   bashrc_common.sh detect-region
   bashrc_common.sh help
+
+Install options:
+  -y, --yes, -b, --batch
+  --ssh=prompt|apply|skip
+  --ssh-keys=prompt|apply|skip
+  --sshd=prompt|apply|skip
 EOF
 }
 
 dotfile_cli() {
   local command="${1:-help}"
-  shift || true
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
 
   case "$command" in
     install)
@@ -35,6 +43,14 @@ dotfile_cli() {
 }
 
 dotfile_cli_dispatch_if_executed() {
+  # Zsh exposes sourced files through ZSH_EVAL_CONTEXT, while Bash uses
+  # BASH_SOURCE. Check both so `source bashrc_common.sh` does not dispatch.
+  case "${ZSH_EVAL_CONTEXT-}" in
+    *:file|*:file:*)
+      return 0
+      ;;
+  esac
+
   local source0="${BASH_SOURCE[0]-}"
 
   # `source file.sh` keeps BASH_SOURCE[0] as the file path, while `bash -s --`

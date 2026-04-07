@@ -53,13 +53,15 @@ dotfile_plan_key_changes() {
 }
 
 dotfile_apply_sshd_changes() {
-  local use_sudo="$1"
+  local sudo_mode="$1"
   local config_changed=false
   local sudo_cmd=()
   local item=""
 
-  if [ "$use_sudo" = true ]; then
+  if [ "$sudo_mode" = "interactive" ]; then
     sudo_cmd=(sudo)
+  elif [ "$sudo_mode" = "noninteractive" ]; then
+    sudo_cmd=(sudo -n)
   fi
 
   for item in "${DOTFILE_SSH_CONFIG_CHECKS[@]}"; do
@@ -72,13 +74,13 @@ dotfile_apply_sshd_changes() {
       local current_value
       current_value=$(echo "$current_setting" | awk '{print $2}')
       if [[ "$current_value" != "$target_value" ]]; then
-        "${sudo_cmd[@]}" sed -i "s|^[[:space:]]*${key}.*|${key} ${target_value}|g" "$DOTFILE_SSHD_CONFIG_FILE"
+        "${sudo_cmd[@]}" sed -i "s|^[[:space:]]*${key}.*|${key} ${target_value}|g" "$DOTFILE_SSHD_CONFIG_FILE" || return 1
         config_changed=true
       fi
     else
       local default_value="${DOTFILE_DEFAULT_SSH_VALUES[$key]}"
       if [[ -z "$default_value" ]] || [[ "$default_value" != "$target_value" ]]; then
-        printf '%s\n' "${key} ${target_value}" | "${sudo_cmd[@]}" tee -a "$DOTFILE_SSHD_CONFIG_FILE" > /dev/null
+        printf '%s\n' "${key} ${target_value}" | "${sudo_cmd[@]}" tee -a "$DOTFILE_SSHD_CONFIG_FILE" > /dev/null || return 1
         config_changed=true
       fi
     fi
@@ -87,9 +89,9 @@ dotfile_apply_sshd_changes() {
   if [ "$config_changed" = true ]; then
     echo "[dotfile] 正在重启 SSH 服务..."
     if command -v systemctl >/dev/null 2>&1; then
-      "${sudo_cmd[@]}" systemctl restart sshd || "${sudo_cmd[@]}" systemctl restart ssh
+      "${sudo_cmd[@]}" systemctl restart sshd || "${sudo_cmd[@]}" systemctl restart ssh || return 1
     elif command -v service >/dev/null 2>&1; then
-      "${sudo_cmd[@]}" service sshd restart || "${sudo_cmd[@]}" service ssh restart
+      "${sudo_cmd[@]}" service sshd restart || "${sudo_cmd[@]}" service ssh restart || return 1
     else
       echo "[dotfile] 警告: 无法自动重启 SSH 服务，请手动重启以应用更改。"
     fi
@@ -101,13 +103,13 @@ dotfile_apply_key_changes() {
   ssh_dir=$(dirname "$DOTFILE_AUTHORIZED_KEYS_FILE")
 
   if [ ! -d "$ssh_dir" ]; then
-    mkdir -p "$ssh_dir"
-    chmod 700 "$ssh_dir"
+    mkdir -p "$ssh_dir" || return 1
+    chmod 700 "$ssh_dir" || return 1
   fi
 
   if [ ! -f "$DOTFILE_AUTHORIZED_KEYS_FILE" ]; then
-    touch "$DOTFILE_AUTHORIZED_KEYS_FILE"
-    chmod 600 "$DOTFILE_AUTHORIZED_KEYS_FILE"
+    touch "$DOTFILE_AUTHORIZED_KEYS_FILE" || return 1
+    chmod 600 "$DOTFILE_AUTHORIZED_KEYS_FILE" || return 1
   fi
 
   local key=""
@@ -115,7 +117,7 @@ dotfile_apply_key_changes() {
     local key_fingerprint
     key_fingerprint=$(echo "$key" | awk '{print $2}')
     if ! grep -qF "$key_fingerprint" "$DOTFILE_AUTHORIZED_KEYS_FILE"; then
-      printf '%s\n' "$key" >> "$DOTFILE_AUTHORIZED_KEYS_FILE"
+      printf '%s\n' "$key" >> "$DOTFILE_AUTHORIZED_KEYS_FILE" || return 1
     fi
   done
 }
