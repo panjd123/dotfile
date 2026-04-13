@@ -175,7 +175,7 @@ dotfile_install() {
 
   if [ ${#DOTFILE_INSTALL_PLAN_SSH_CONFIG[@]} -eq 0 ] && [ ${#DOTFILE_INSTALL_PLAN_SSH_KEYS[@]} -eq 0 ]; then
     echo "[dotfile] SSH 配置与公钥均已是最新状态，无需操作。"
-    echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
+    echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE_DISPLAY' 生效。"
     return 0
   fi
 
@@ -192,7 +192,7 @@ dotfile_install() {
   fi
 
   if [ ${#DOTFILE_INSTALL_PLAN_SSH_KEYS[@]} -gt 0 ]; then
-    echo -e "\n[SSH 公钥变更] (将写入 $DOTFILE_AUTHORIZED_KEYS_FILE):"
+    echo -e "\n[SSH 公钥变更] (将写入 $DOTFILE_AUTHORIZED_KEYS_FILE_DISPLAY):"
     printf "  - %s\n" "${DOTFILE_INSTALL_PLAN_SSH_KEYS[@]}"
   fi
 
@@ -238,5 +238,5 @@ dotfile_install() {
     esac
   fi
 
-  echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
+  echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE_DISPLAY' 生效。"
 }

@@ -5,8 +5,8 @@
 ## Install
 
 ```bash
-# git clone git@github.com:panjd123/dotfile.git $HOME/.dotfile
-git clone https://github.com/panjd123/dotfile.git $HOME/.dotfile
+# git clone git@github.com:panjd123/dotfile.git ~/.dotfile
+git clone https://github.com/panjd123/dotfile.git ~/.dotfile
 bash ~/.dotfile/bashrc_common.sh install
 
 # 非交互安装，默认会应用 authorized_keys 和 sshd_config 变更
@@ -112,8 +112,8 @@ uv pip install vllm --torch-backend=auto
 # miniconda
 cd /tmp
 wget -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash miniconda.sh -b -p "$HOME/miniconda3"
-eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
+bash miniconda.sh -b -p ~/miniconda3
+eval "$(~/miniconda3/bin/conda shell.bash hook)"
 conda init bash
 conda config --set auto_activate_base false
 
@@ -132,7 +132,7 @@ uv tool install nvidia-htop
 ```bash
 # nvm
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
+export NVM_DIR=~/.nvm
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 nvm install --lts
 node -v
@@ -262,7 +262,7 @@ vibe-pull user@host
 
 `codex-push` / `codex-pull` only copy `auth.json`, `auth.json.*`, `config.toml`, and `config.toml.*` when the receiver does not already have that file. Both always overwrite `auth.json.openai`.
 `claude-push` / `claude-pull` only copy `settings.json` and `settings.json.*` when the receiver does not already have that file.
-`data-push` / `data-pull` remap the last argument to each machine's own home directory only when it points under the current user's home, such as `data`, `~`, `~/foo`, or an already-expanded local path like `/home/alice/foo`. Other absolute paths like `/mnt/shared` are synced as the same absolute path on both sides. Quote `~` if you want to keep it literal in shell history examples.
+`data-push` / `data-pull` remap the last argument to each machine's own home directory only when it points under the current user's home, such as `data`, `~`, `~/foo`, or an already-expanded local path like `/home/<user>/foo`. Other absolute paths like `/mnt/shared` are synced as the same absolute path on both sides. Quote `~` if you want to keep it literal in shell history examples.
 When in doubt: relative paths are treated as under `~`, current-user home paths are re-rooted to each side's own `~`, and non-home absolute paths are left untouched.
 `opencode-push` / `opencode-pull` fully sync `oh-my-opencode.json` and `gen_oh_my_opencode.py`. For `opencode.json`, they copy the whole file when the receiver has no file yet, otherwise only merge the `provider` field; `~/.config/opencode/plugins` stays out of sync.
 `vibe-push` / `vibe-pull` run `claude`, `codex`, and `opencode` sync in order with the same SSH target and options.

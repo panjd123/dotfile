@@ -38,18 +38,43 @@ dotfile_detect_shell_rc_files() {
 
 dotfile_ensure_shell_rc_source() {
   local rc_file="$1"
+  local rc_file_display=""
+  local desired_source_line="source $COMMON_FILE_DISPLAY"
+  local legacy_source_line="source $COMMON_FILE"
+
+  rc_file_display=$(dotfile_display_path "$rc_file")
 
   if [ ! -f "$rc_file" ]; then
     touch "$rc_file" || return 1
-    echo "[dotfile] 已创建 $(basename "$rc_file")"
+    echo "[dotfile] 已创建 $rc_file_display"
   fi
 
-  if ! grep -qF "source $COMMON_FILE" "$rc_file"; then
-    printf 'source %s\n' "$COMMON_FILE" >> "$rc_file" || return 1
-    echo "[dotfile] 已自动将 $COMMON_FILE 加入 $rc_file"
-  else
-    echo "[dotfile] $rc_file 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
+  if grep -qF "$desired_source_line" "$rc_file"; then
+    echo "[dotfile] $rc_file_display 已包含对 $COMMON_FILE_DISPLAY 的引用，跳过此步骤。"
+    return 0
   fi
+
+  if grep -qF "$legacy_source_line" "$rc_file"; then
+    local tmp_file=""
+    tmp_file=$(mktemp) || return 1
+
+    # Rewrite only the legacy line we previously generated.
+    if ! awk -v old="$legacy_source_line" -v new="$desired_source_line" '{ print ($0 == old ? new : $0) }' "$rc_file" > "$tmp_file"; then
+      rm -f "$tmp_file"
+      return 1
+    fi
+
+    if ! mv "$tmp_file" "$rc_file"; then
+      rm -f "$tmp_file"
+      return 1
+    fi
+
+    echo "[dotfile] 已将 $rc_file_display 中的引用更新为 $COMMON_FILE_DISPLAY"
+    return 0
+  fi
+
+  printf 'source %s\n' "$COMMON_FILE_DISPLAY" >> "$rc_file" || return 1
+  echo "[dotfile] 已自动将 $COMMON_FILE_DISPLAY 加入 $rc_file_display"
 }
 
 dotfile_ensure_shell_sources() {

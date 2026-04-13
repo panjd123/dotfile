@@ -10,12 +10,16 @@
 # Shared dotfile paths, URLs, and install-time defaults.
 DOTFILES_DIR="$HOME/.dotfile"
 COMMON_FILE="$DOTFILES_DIR/bashrc_common.sh"
+DOTFILES_DIR_DISPLAY="~/.dotfile"
+COMMON_FILE_DISPLAY="$DOTFILES_DIR_DISPLAY/bashrc_common.sh"
 DOTFILE_RAW_COMMON_URL="https://raw.githubusercontent.com/panjd123/dotfile/master/bashrc_common.sh"
 DOTFILE_NETWORK_REGION_FILE="$DOTFILES_DIR/.network_region"
+DOTFILE_NETWORK_REGION_FILE_DISPLAY="$DOTFILES_DIR_DISPLAY/.network_region"
 DOTFILE_CN_PYPI_INDEX="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 DOTFILE_CN_PYPI_HOST="mirrors.tuna.tsinghua.edu.cn"
 DOTFILE_CN_HF_ENDPOINT="https://hf-mirror.com"
 DOTFILE_AUTHORIZED_KEYS_FILE="$HOME/.ssh/authorized_keys"
+DOTFILE_AUTHORIZED_KEYS_FILE_DISPLAY="~/.ssh/authorized_keys"
 DOTFILE_SSHD_CONFIG_FILE="/etc/ssh/sshd_config"
 
 DOTFILE_SSH_PUBLIC_KEYS=(
@@ -33,6 +37,24 @@ DOTFILE_DEFAULT_SSH_VALUES["PermitRootLogin"]="prohibit-password"
 
 declare -a DOTFILE_INSTALL_PLAN_SSH_CONFIG=()
 declare -a DOTFILE_INSTALL_PLAN_SSH_KEYS=()
+
+# Keep filesystem access on expanded paths, but render user-facing paths with ~
+# so installed rc files do not pin a specific home directory.
+dotfile_display_path() {
+  local path="${1:-}"
+
+  case "$path" in
+    "$HOME")
+      printf '~\n'
+      ;;
+    "$HOME"/*)
+      printf '~/%s\n' "${path#"$HOME"/}"
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
+}
 # Region detection and region-gated mirror environment variables.
 dotfile_read_network_region() {
   if [ ! -f "$DOTFILE_NETWORK_REGION_FILE" ]; then
@@ -168,18 +190,43 @@ dotfile_detect_shell_rc_files() {
 
 dotfile_ensure_shell_rc_source() {
   local rc_file="$1"
+  local rc_file_display=""
+  local desired_source_line="source $COMMON_FILE_DISPLAY"
+  local legacy_source_line="source $COMMON_FILE"
+
+  rc_file_display=$(dotfile_display_path "$rc_file")
 
   if [ ! -f "$rc_file" ]; then
     touch "$rc_file" || return 1
-    echo "[dotfile] 已创建 $(basename "$rc_file")"
+    echo "[dotfile] 已创建 $rc_file_display"
   fi
 
-  if ! grep -qF "source $COMMON_FILE" "$rc_file"; then
-    printf 'source %s\n' "$COMMON_FILE" >> "$rc_file" || return 1
-    echo "[dotfile] 已自动将 $COMMON_FILE 加入 $rc_file"
-  else
-    echo "[dotfile] $rc_file 已包含对 $COMMON_FILE 的引用，跳过此步骤。"
+  if grep -qF "$desired_source_line" "$rc_file"; then
+    echo "[dotfile] $rc_file_display 已包含对 $COMMON_FILE_DISPLAY 的引用，跳过此步骤。"
+    return 0
   fi
+
+  if grep -qF "$legacy_source_line" "$rc_file"; then
+    local tmp_file=""
+    tmp_file=$(mktemp) || return 1
+
+    # Rewrite only the legacy line we previously generated.
+    if ! awk -v old="$legacy_source_line" -v new="$desired_source_line" '{ print ($0 == old ? new : $0) }' "$rc_file" > "$tmp_file"; then
+      rm -f "$tmp_file"
+      return 1
+    fi
+
+    if ! mv "$tmp_file" "$rc_file"; then
+      rm -f "$tmp_file"
+      return 1
+    fi
+
+    echo "[dotfile] 已将 $rc_file_display 中的引用更新为 $COMMON_FILE_DISPLAY"
+    return 0
+  fi
+
+  printf 'source %s\n' "$COMMON_FILE_DISPLAY" >> "$rc_file" || return 1
+  echo "[dotfile] 已自动将 $COMMON_FILE_DISPLAY 加入 $rc_file_display"
 }
 
 dotfile_ensure_shell_sources() {
@@ -489,7 +536,7 @@ dotfile_install() {
 
   if [ ${#DOTFILE_INSTALL_PLAN_SSH_CONFIG[@]} -eq 0 ] && [ ${#DOTFILE_INSTALL_PLAN_SSH_KEYS[@]} -eq 0 ]; then
     echo "[dotfile] SSH 配置与公钥均已是最新状态，无需操作。"
-    echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
+    echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE_DISPLAY' 生效。"
     return 0
   fi
 
@@ -506,7 +553,7 @@ dotfile_install() {
   fi
 
   if [ ${#DOTFILE_INSTALL_PLAN_SSH_KEYS[@]} -gt 0 ]; then
-    echo -e "\n[SSH 公钥变更] (将写入 $DOTFILE_AUTHORIZED_KEYS_FILE):"
+    echo -e "\n[SSH 公钥变更] (将写入 $DOTFILE_AUTHORIZED_KEYS_FILE_DISPLAY):"
     printf "  - %s\n" "${DOTFILE_INSTALL_PLAN_SSH_KEYS[@]}"
   fi
 
@@ -552,7 +599,7 @@ dotfile_install() {
     esac
   fi
 
-  echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE' 生效。"
+  echo "[dotfile] 安装完成。重新打开终端或执行 'source $COMMON_FILE_DISPLAY' 生效。"
 }
 # CLI subcommands exposed when bashrc_common.sh is executed instead of sourced.
 dotfile_cli_usage() {
