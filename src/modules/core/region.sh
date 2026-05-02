@@ -58,8 +58,10 @@ dotfile_detect_network_region() {
 }
 
 dotfile_refresh_network_region() {
-  local region
-  region=$(dotfile_detect_network_region)
+  local region="${1:-}"
+  if [ -z "$region" ]; then
+    region=$(dotfile_detect_network_region)
+  fi
   dotfile_write_network_region "$region"
   echo "[dotfile] 当前网络区域: $region"
 }
@@ -87,7 +89,10 @@ dotfile_clear_cn_network_settings() {
 }
 
 dotfile_apply_region_network_settings() {
-  if [ "$(dotfile_read_network_region)" = "CN" ]; then
+  local region
+  region=$(dotfile_read_network_region)
+  # Treat UNKNOWN as CN to avoid missing mirror settings when detection fails.
+  if [ "$region" = "CN" ] || [ "$region" = "UNKNOWN" ]; then
     dotfile_apply_cn_network_settings
   else
     dotfile_clear_cn_network_settings

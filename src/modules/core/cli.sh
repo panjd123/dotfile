@@ -9,6 +9,7 @@ Usage:
 
 Install options:
   -y, --yes, -b, --batch
+  --region=CN|OVERSEAS|UNKNOWN
   --ssh=prompt|apply|skip
   --ssh-keys=prompt|apply|skip
   --sshd=prompt|apply|skip
