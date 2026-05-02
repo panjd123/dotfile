@@ -115,8 +115,10 @@ dotfile_detect_network_region() {
 }
 
 dotfile_refresh_network_region() {
-  local region
-  region=$(dotfile_detect_network_region)
+  local region="${1:-}"
+  if [ -z "$region" ]; then
+    region=$(dotfile_detect_network_region)
+  fi
   dotfile_write_network_region "$region"
   echo "[dotfile] 当前网络区域: $region"
 }
@@ -144,7 +146,10 @@ dotfile_clear_cn_network_settings() {
 }
 
 dotfile_apply_region_network_settings() {
-  if [ "$(dotfile_read_network_region)" = "CN" ]; then
+  local region
+  region=$(dotfile_read_network_region)
+  # Treat UNKNOWN as CN to avoid missing mirror settings when detection fails.
+  if [ "$region" = "CN" ] || [ "$region" = "UNKNOWN" ]; then
     dotfile_apply_cn_network_settings
   else
     dotfile_clear_cn_network_settings
@@ -369,6 +374,8 @@ Usage:
 Options:
   -y, --yes, -b, --batch
       Non-interactive mode. By default it applies SSH key and sshd changes.
+  --region=CN|OVERSEAS|UNKNOWN
+      Manually set the network region instead of auto-detecting.
   --ssh=prompt|apply|skip
       Set the default policy for both SSH key and sshd changes.
   --ssh-keys=prompt|apply|skip
@@ -440,6 +447,7 @@ dotfile_apply_sshd_changes_with_auto_sudo() {
 # End-user install command, usable from both repo checkouts and curl installs.
 dotfile_install() {
   local non_interactive=false
+  local region_override=""
   local ssh_policy=""
   local ssh_keys_policy=""
   local sshd_policy=""
@@ -448,6 +456,9 @@ dotfile_install() {
     case "$1" in
       -y|--yes|-b|--batch)
         non_interactive=true
+        ;;
+      --region=*)
+        region_override="${1#*=}"
         ;;
       --ssh=*)
         ssh_policy="${1#*=}"
@@ -470,6 +481,16 @@ dotfile_install() {
     esac
     shift
   done
+
+  if [ -n "$region_override" ]; then
+    case "$region_override" in
+      CN|OVERSEAS|UNKNOWN) ;;
+      *)
+        echo "[dotfile] 错误: --region 仅支持 CN、OVERSEAS、UNKNOWN。" >&2
+        return 1
+        ;;
+    esac
+  fi
 
   if [ -n "$ssh_policy" ] && ! dotfile_install_validate_policy "$ssh_policy"; then
     echo "[dotfile] 错误: --ssh 仅支持 prompt、apply、skip。" >&2
@@ -526,7 +547,7 @@ dotfile_install() {
     fi
   fi
 
-  dotfile_refresh_network_region
+  dotfile_refresh_network_region "$region_override"
   dotfile_ensure_shell_sources || return 1
 
   echo "正在扫描系统变更..."
@@ -612,6 +633,7 @@ Usage:
 
 Install options:
   -y, --yes, -b, --batch
+  --region=CN|OVERSEAS|UNKNOWN
   --ssh=prompt|apply|skip
   --ssh-keys=prompt|apply|skip
   --sshd=prompt|apply|skip
